@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
+import { ensureUserProfile } from "../../lib/user-profile";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -23,6 +24,7 @@ export default function LoginPage() {
       if (isRegistering) {
         const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
         if (signUpError) throw signUpError;
+        if (data.user) await ensureUserProfile(data.user.id);
         if (data.session) router.replace("/");
         else setMessage("Konto utworzone. Sprawdź skrzynkę e-mail i potwierdź rejestrację.");
       } else {

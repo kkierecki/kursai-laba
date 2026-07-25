@@ -316,7 +316,7 @@ function getUserId(value: unknown) {
 function createPersonalizationPrompt(profile: UserProfile | null) {
   if (!profile?.name) {
     return `## PERSONALIZACJA UŻYTKOWNIKA
-To nowy użytkownik albo użytkownik, który nie podał jeszcze imienia. Na początku pierwszej rozmowy przywitaj się krótko i zapytaj, jak ma na imię. Gdy je poda, użyj narzędzia saveUserName.`;
+To nowy członek załogi, którego imienia jeszcze nie znasz. Na początku pierwszej odpowiedzi przywitaj go krótko w stylu Bosmana Borysa (np. "Ahoj, witaj na pokładzie!") i zapytaj, jak masz się do niego zwracać. Nie pytaj o imię ponownie, jeśli już je podał w bieżącej rozmowie. Gdy poda imię, NATYCHMIAST użyj narzędzia saveUserName, a potem odpowiedz po morsku, np. "Miło cię mieć na pokładzie, {imię}. Zapamiętam."`;
   }
 
   const preferences = Object.entries(profile.preferences)
@@ -325,7 +325,7 @@ To nowy użytkownik albo użytkownik, który nie podał jeszcze imienia. Na pocz
     .join(", ");
 
   return `## PERSONALIZACJA UŻYTKOWNIKA
-Użytkownik ma na imię ${profile.name}. Przywitaj go po imieniu, zwracaj się do niego ciepło i personalnie. To stały użytkownik.${
+To stały członek załogi: ${profile.name}. W nowej rozmowie przywitaj go po imieniu w stylu doświadczonego bosmana, np. "Ahoj, ${profile.name}. Co dziś robimy na pokładzie?". W dalszej rozmowie zwracaj się po imieniu naturalnie, ale nie w każdym zdaniu. Zachowaj konkretny, rzeczowy i morski ton Bosmana Borysa.${
     preferences
       ? ` Zapamiętane preferencje użytkownika: ${preferences}. Korzystaj z nich, gdy pasują do pytania.`
       : ""
