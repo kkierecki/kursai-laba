@@ -21,7 +21,8 @@ import {
   saveUserPreference,
   type UserProfile,
 } from "../../../lib/user-profile";
-import { fetchWeather, searchKnowledgeTool } from "../../../lib/agent-tools";
+import { fetchWeather, searchKnowledge, searchKnowledgeTool } from "../../../lib/agent-tools";
+import { getRequestUser } from "../../../lib/request-user";
 
 export const maxDuration = 90;
 
@@ -244,6 +245,11 @@ function createChatTools(userId: string | null) {
 
   return {
     ...tools,
+    searchKnowledge: tool({
+      description: "Wyszukuje informacje wyłącznie w prywatnej bazie wiedzy zalogowanego użytkownika.",
+      inputSchema: jsonSchema<{ query: string }>({ type: "object", properties: { query: { type: "string" } }, required: ["query"], additionalProperties: false }),
+      execute: async ({ query }) => searchKnowledge(query, userId),
+    }),
     saveUserName: tool({
       description:
         "Zapisuje imię użytkownika w jego profilu. Użyj natychmiast, gdy użytkownik poda swoje imię.",
@@ -872,7 +878,7 @@ export async function POST(req: Request) {
       messages,
       mode,
       model,
-      userId: rawUserId,
+      userId: _rawUserId,
     }: {
       image?: RequestImage;
       messages: UIMessage[];
@@ -881,9 +887,13 @@ export async function POST(req: Request) {
       userId?: unknown;
     } = await req.json();
 
+    const authenticatedUser = await getRequestUser(req);
+    if (!authenticatedUser) {
+      return Response.json({ error: "Wymagane logowanie." }, { status: 401 });
+    }
     const selectedMode = getMode(mode);
     const selectedModel = getAiModel(model);
-    const userId = getUserId(rawUserId);
+    const userId = authenticatedUser.id;
     const requestTools = createChatTools(userId);
     let profile: UserProfile | null = null;
 

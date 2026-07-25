@@ -346,13 +346,13 @@ async function createKnowledgeEmbedding(text: string) {
   return payload.embedding.values;
 }
 
-export async function searchKnowledge(query: string) {
+export async function searchKnowledge(query: string, userId?: string) {
   const normalized = query.trim();
-  if (!normalized) return { results: [], total_found: 0, message: "Nie znaleziono informacji w bazie wiedzy." };
+  if (!normalized || !userId) return { results: [], total_found: 0, message: "Nie znaleziono informacji w bazie wiedzy." };
   try {
     const embedding = await createKnowledgeEmbedding(normalized);
     if (!embedding) return { results: [], total_found: 0, message: "Nie znaleziono informacji w bazie wiedzy." };
-    const { data, error } = await supabase.rpc("match_documents", { query_embedding: embedding, match_threshold: 0.5, match_count: 5 });
+    const { data, error } = await supabase.rpc("match_documents", { query_embedding: embedding, match_threshold: 0.5, match_count: 5, match_user_id: userId });
     if (error) throw error;
     const results = (data ?? []).map((row: { title?: string; content?: string; similarity?: number; metadata?: Record<string, unknown> }) => {
       const title = row.title ?? "Dokument";

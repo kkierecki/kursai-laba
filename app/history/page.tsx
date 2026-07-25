@@ -45,8 +45,12 @@ export default function HistoryPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
 
   async function loadConversations() {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    setUserId(user.id);
     setIsLoading(true);
     setError(null);
 
@@ -54,6 +58,7 @@ export default function HistoryPage() {
       const { data: conversationData, error: conversationError } = await supabase
         .from("conversations")
         .select("id,title,updated_at")
+        .eq("user_id", user.id)
         .order("updated_at", { ascending: false });
 
       if (conversationError) throw conversationError;
@@ -131,7 +136,8 @@ export default function HistoryPage() {
       const { error: conversationError } = await supabase
         .from("conversations")
         .delete()
-        .eq("id", id);
+        .eq("id", id)
+        .eq("user_id", userId);
       if (conversationError) throw conversationError;
 
       setConversations((current) =>

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { supabase } from "../../lib/supabase";
 
 type KnowledgeDocument = { title: string; chunks: number; createdAt: string };
 type KnowledgeChunk = { content: string; index: number; createdAt: string };
@@ -21,8 +22,14 @@ export default function UploadPage() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
 
+  async function authHeaders(contentType = false) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error("Sesja wygasła. Zaloguj się ponownie.");
+    return { ...(contentType ? { "Content-Type": "application/json" } : {}), Authorization: `Bearer ${session.access_token}` };
+  }
+
   const loadDocuments = useCallback(async () => {
-    const response = await fetch("/api/knowledge-documents");
+    const response = await fetch("/api/knowledge-documents", { headers: await authHeaders() });
     const data = (await response.json()) as { documents?: KnowledgeDocument[]; error?: string };
     if (!response.ok) throw new Error(data.error ?? "Nie udało się pobrać dokumentów.");
     setDocuments(data.documents ?? []);
@@ -38,7 +45,7 @@ export default function UploadPage() {
     event.preventDefault();
     setError(""); setMessage(""); setProgress({ current: 0, total: 1 });
     try {
-      const response = await fetch("/api/upload-knowledge", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, content }) });
+      const response = await fetch("/api/upload-knowledge", { method: "POST", headers: await authHeaders(true), body: JSON.stringify({ title, content }) });
       if (!response.ok || !response.body) { const data = (await response.json()) as { error?: string }; throw new Error(data.error ?? "Nie udało się rozpocząć zapisu."); }
       const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
       while (true) {
@@ -59,7 +66,7 @@ export default function UploadPage() {
   async function selectDocument(documentTitle: string) {
     setError(""); setSelectedTitle(documentTitle); setChunks([]);
     try {
-      const response = await fetch(`/api/knowledge-documents?title=${encodeURIComponent(documentTitle)}`);
+      const response = await fetch(`/api/knowledge-documents?title=${encodeURIComponent(documentTitle)}`, { headers: await authHeaders() });
       const data = (await response.json()) as { chunks?: KnowledgeChunk[]; error?: string };
       if (!response.ok) throw new Error(data.error ?? "Nie udało się pobrać fragmentów.");
       setChunks(data.chunks ?? []);
@@ -69,7 +76,7 @@ export default function UploadPage() {
   async function deleteDocument(documentTitle: string) {
     setDeleting(documentTitle); setError("");
     try {
-      const response = await fetch("/api/knowledge-documents", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: documentTitle }) });
+      const response = await fetch("/api/knowledge-documents", { method: "DELETE", headers: await authHeaders(true), body: JSON.stringify({ title: documentTitle }) });
       if (!response.ok) throw new Error(((await response.json()) as { error?: string }).error ?? "Nie udało się usunąć dokumentu.");
       if (selectedTitle === documentTitle) { setSelectedTitle(null); setChunks([]); }
       await loadDocuments();
@@ -79,7 +86,7 @@ export default function UploadPage() {
   async function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError(""); setSearching(true); setSearchResults([]);
     try {
-      const response = await fetch("/api/knowledge-search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: searchQuery }) });
+      const response = await fetch("/api/knowledge-search", { method: "POST", headers: await authHeaders(true), body: JSON.stringify({ query: searchQuery }) });
       const data = (await response.json()) as { results?: SearchResult[]; error?: string };
       if (!response.ok) throw new Error(data.error ?? "Nie udało się przeszukać bazy.");
       setSearchResults(data.results ?? []);

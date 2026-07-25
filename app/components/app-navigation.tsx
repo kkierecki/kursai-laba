@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
+import { supabase } from "../../lib/supabase";
 
 const links = [
   { href: "/", label: "🏠 Dashboard" },
@@ -23,7 +24,15 @@ const links = [
 
 export function AppNavigation() {
   const pathname = usePathname();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+
+  if (pathname === "/login") return null;
+
+  async function signOut() {
+    await supabase.auth.signOut();
+    router.replace("/login");
+  }
 
   return (
     <>
@@ -52,6 +61,7 @@ export function AppNavigation() {
             </Link>
           );
         })}
+        <button className="nav-sign-out" onClick={() => void signOut()} type="button">Wyloguj</button>
       </nav>
     </>
   );

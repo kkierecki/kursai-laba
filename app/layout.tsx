@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AppNavigation } from "./components/app-navigation";
+import { AuthGuard } from "./components/auth-guard";
 
 export const metadata: Metadata = {
   title: "Centrum agenta AI",
@@ -16,8 +17,10 @@ export default function RootLayout({
   return (
     <html lang="pl">
       <body>
-        <AppNavigation />
-        {children}
+        <AuthGuard>
+          <AppNavigation />
+          {children}
+        </AuthGuard>
       </body>
     </html>
   );

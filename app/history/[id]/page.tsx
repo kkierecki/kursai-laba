@@ -28,10 +28,13 @@ export default function ConversationDetailPage() {
     async function loadConversation() {
       setIsLoading(true);
       try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("Brak aktywnej sesji użytkownika");
         const { data: conversationData, error: conversationError } = await supabase
           .from("conversations")
           .select("id,title,updated_at")
           .eq("id", params.id)
+          .eq("user_id", user.id)
           .maybeSingle();
         if (conversationError) throw conversationError;
         if (!conversationData) throw new Error("Nie znaleziono rozmowy");

@@ -67,9 +67,6 @@ type StoredMessage = {
   content: string;
 };
 
-const userIdPattern =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 export function ChatHome() {
   const [input, setInput] = useState("");
   const [mode, setMode] = useState<ChatMode>("casual");
@@ -84,6 +81,8 @@ export function ChatHome() {
   const [copied, setCopied] = useState(false);
   const [isRestoring, setIsRestoring] = useState(true);
   const [isProfileLoading, setIsProfileLoading] = useState(true);
+  const [authUserId, setAuthUserId] = useState<string | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isCreatingConversation, setIsCreatingConversation] = useState(false);
   const [persistenceError, setPersistenceError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -116,6 +115,7 @@ export function ChatHome() {
     () =>
       new DefaultChatTransport({
         api: "/api/chat",
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
         prepareSendMessagesRequest: ({
           api,
           body,
@@ -138,7 +138,7 @@ export function ChatHome() {
           },
         }),
       }),
-    [],
+    [accessToken],
   );
   const {
     messages,
@@ -168,14 +168,15 @@ export function ChatHome() {
       setIsProfileLoading(true);
 
       try {
-        let userId = window.localStorage.getItem("user_id");
-
-        if (!userId || !userIdPattern.test(userId)) {
-          userId = crypto.randomUUID();
-          window.localStorage.setItem("user_id", userId);
-        }
+        const { data: { user } } = await supabase.auth.getUser();
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!user) throw new Error("Brak aktywnej sesji użytkownika.");
+        if (!session) throw new Error("Sesja użytkownika wygasła.");
+        const userId = user.id;
 
         userIdRef.current = userId;
+        setAuthUserId(userId);
+        setAccessToken(session.access_token);
         await ensureUserProfile(userId);
       } catch (profileError) {
         console.error("Nie udało się przygotować profilu użytkownika", profileError);
@@ -200,6 +201,7 @@ export function ChatHome() {
     let cancelled = false;
 
     async function restoreConversation() {
+      if (!authUserId) return;
       setIsRestoring(true);
       setPersistenceError(null);
 
@@ -212,10 +214,12 @@ export function ChatHome() {
               .from("conversations")
               .select("id,title")
               .eq("id", requestedConversationId)
+              .eq("user_id", authUserId)
               .maybeSingle()
           : supabase
               .from("conversations")
               .select("id,title")
+              .eq("user_id", authUserId)
               .order("updated_at", { ascending: false })
               .limit(1)
               .maybeSingle();
@@ -283,7 +287,7 @@ export function ChatHome() {
     return () => {
       cancelled = true;
     };
-  }, [setMessages]);
+  }, [authUserId, setMessages]);
 
   useEffect(() => {
     modeRef.current = mode;
@@ -339,6 +343,7 @@ export function ChatHome() {
         .from("conversations")
         .insert({
           title: firstUserMessage ? makeConversationTitle(firstUserMessage) : null,
+          user_id: userIdRef.current,
         })
         .select("id,title")
         .single();
@@ -431,7 +436,8 @@ export function ChatHome() {
       const { error: updateError } = await supabase
         .from("conversations")
         .update(conversationUpdate)
-        .eq("id", conversationId);
+        .eq("id", conversationId)
+        .eq("user_id", userIdRef.current);
 
       if (updateError) {
         throw updateError;
