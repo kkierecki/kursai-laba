@@ -82,7 +82,6 @@ export function ChatHome() {
   const [isRestoring, setIsRestoring] = useState(true);
   const [isProfileLoading, setIsProfileLoading] = useState(true);
   const [authUserId, setAuthUserId] = useState<string | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isCreatingConversation, setIsCreatingConversation] = useState(false);
   const [persistenceError, setPersistenceError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -115,30 +114,36 @@ export function ChatHome() {
     () =>
       new DefaultChatTransport({
         api: "/api/chat",
-        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
-        prepareSendMessagesRequest: ({
+        prepareSendMessagesRequest: async ({
           api,
           body,
           id,
           messages,
           messageId,
           trigger,
-        }) => ({
-          api,
-          body: {
-            ...body,
-            id,
-            image: pendingImageRef.current,
-            messages,
-            messageId,
-            trigger,
-            mode: modeRef.current,
-            model: aiModelRef.current,
-            userId: userIdRef.current,
-          },
-        }),
+        }) => {
+          const { data: { session } } = await supabase.auth.getSession();
+          const headers: Record<string, string> = session
+            ? { Authorization: `Bearer ${session.access_token}` }
+            : {};
+          return {
+            api,
+            headers,
+            body: {
+              ...body,
+              id,
+              image: pendingImageRef.current,
+              messages,
+              messageId,
+              trigger,
+              mode: modeRef.current,
+              model: aiModelRef.current,
+              userId: userIdRef.current,
+            },
+          };
+        },
       }),
-    [accessToken],
+    [],
   );
   const {
     messages,
@@ -176,7 +181,6 @@ export function ChatHome() {
 
         userIdRef.current = userId;
         setAuthUserId(userId);
-        setAccessToken(session.access_token);
         await ensureUserProfile(userId);
       } catch (profileError) {
         console.error("Nie udało się przygotować profilu użytkownika", profileError);
