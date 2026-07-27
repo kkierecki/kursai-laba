@@ -11,15 +11,18 @@ export default function RacePlanPage() {
   const [input, setInput] = useState("");
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [duration, setDuration] = useState<number | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const wasLoadingRef = useRef(false);
   const hasLoadedRacesRef = useRef(false);
+  const accessTokenRef = useRef<string | null>(null);
   const transport = useMemo(() => new DefaultChatTransport({
     api: "/api/race-plan",
     prepareSendMessagesRequest: async ({ api, body, id, messages, messageId, trigger }) => {
       const { data: { session } } = await supabase.auth.getSession();
-      const headers: Record<string, string> = session
-        ? { Authorization: `Bearer ${session.access_token}` }
+      const token = accessTokenRef.current ?? session?.access_token;
+      const headers: Record<string, string> = token
+        ? { Authorization: `Bearer ${token}` }
         : {};
       return {
         api,
@@ -36,11 +39,23 @@ export default function RacePlanPage() {
     if (wasLoadingRef.current && startedAt !== null) { setDuration((Date.now() - startedAt) / 1000); setStartedAt(null); wasLoadingRef.current = false; }
   }, [isLoading, startedAt]);
   useEffect(() => {
-    if (hasLoadedRacesRef.current || status !== "ready") return;
+    let active = true;
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      accessTokenRef.current = session?.access_token ?? null;
+      if (active) setAccessToken(accessTokenRef.current);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      accessTokenRef.current = session?.access_token ?? null;
+      if (active) setAccessToken(accessTokenRef.current);
+    });
+    return () => { active = false; subscription.unsubscribe(); };
+  }, []);
+  useEffect(() => {
+    if (!accessToken || hasLoadedRacesRef.current || status !== "ready") return;
     hasLoadedRacesRef.current = true;
     setStartedAt(Date.now());
     void sendMessage({ text: "Znajdź i pokaż najbliższe oficjalne biegi w Polsce. Jeśli mam zapisaną lokalizację, zacznij od jej okolic." });
-  }, [sendMessage, status]);
+  }, [accessToken, sendMessage, status]);
   async function sendText(text: string) {
     if (!text.trim() || isLoading) return;
     setStartedAt(Date.now()); setDuration(null); setInput("");

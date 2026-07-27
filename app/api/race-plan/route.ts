@@ -41,8 +41,9 @@ export async function POST(request: Request) {
   try {
     const { messages }: { messages: UIMessage[] } = await request.json();
     const user = await getRequestUser(request);
-    if (!user) return Response.json({ error: "Wymagane logowanie." }, { status: 401 });
-    const [runnerContext, activePlans] = await Promise.all([getRunnerContext(user.id), getActiveRacePlans(user.id)]);
+    const [runnerContext, activePlans] = user
+      ? await Promise.all([getRunnerContext(user.id), getActiveRacePlans(user.id)])
+      : [{ profile: null, goals: [], lastWorkout: null, lastRecovery: null, lastConversationAt: null }, []];
     const tools = {
       google_search: google.tools.googleSearch({}),
       readWebPage: tool({
@@ -57,7 +58,9 @@ export async function POST(request: Request) {
           properties: { eventName: { type: "string" }, eventDate: { type: "string", description: "YYYY-MM-DD" }, officialUrl: { type: "string" }, planMarkdown: { type: "string" }, distanceKm: { type: "number" }, location: { type: "string" }, eventDetails: { type: "object" } },
           required: ["eventName", "eventDate", "officialUrl", "planMarkdown"], additionalProperties: false,
         }),
-        execute: async (input) => saveRacePlan(user.id, input),
+        execute: async (input) => user
+          ? saveRacePlan(user.id, input)
+          : { saved: false, error: "Zapis planu wymaga zalogowanej sesji. Lista biegów pozostaje dostępna." },
       }),
     };
     const modelMessages = await convertToModelMessages(messages, { tools });
