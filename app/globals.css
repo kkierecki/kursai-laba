@@ -146,6 +146,12 @@ button {
 .history-notice { color: #9ef0b5; }
 .history-empty { display: grid; justify-items: start; gap: 12px; border: 1px dashed #424250; border-radius: 10px; color: #bbb; padding: 22px; text-align: left; }
 .history-empty p { margin: 0; }
+
+.trainings-shell { min-height: 100vh; padding: 30px; }
+.trainings-panel { width: min(100%, 920px); margin: 0 auto; overflow: hidden; border: 1px solid #333; border-radius: 14px; background: #101014; }
+.trainings-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; border-bottom: 1px solid #292933; padding: 24px; }.trainings-header h1, .trainings-header p { margin: 0; }.trainings-header p { margin-top: 6px; color: #a4a4b8; }
+.training-chat-link, .training-empty a, .training-edit { display: inline-flex; align-items: center; justify-content: center; border: 1px solid #61f8f8; border-radius: 8px; background: #61f8f8; color: #061316; padding: 9px 11px; font-weight: 750; text-decoration: none; white-space: nowrap; }
+.training-list { display: grid; gap: 10px; padding: 18px 24px 24px; }.training-card { display: flex; align-items: center; justify-content: space-between; gap: 18px; border: 1px solid #353544; border-radius: 10px; background: #171722; padding: 16px; }.training-card-content { min-width: 0; }.training-card time, .training-card p { color: #a4a4b8; font-size: .9rem; }.training-card h2, .training-card p { margin: 7px 0 0; }.training-card h2 { color: #fff; font-size: 1.05rem; }.training-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }.training-delete { border: 1px solid #9a4141; border-radius: 8px; background: #321818; color: #ffc0c0; padding: 9px 11px; font: inherit; font-weight: 750; }.training-delete:disabled { cursor: wait; opacity: .55; }.training-error, .training-state, .training-empty { margin: 18px 24px 24px; }.training-error { color: #ffb4b4; }.training-state { color: #b7b7c8; }.training-empty { display: grid; justify-items: start; gap: 10px; border: 1px dashed #424250; border-radius: 10px; color: #bbb; padding: 22px; }.training-empty p { margin: 0; }
 .conversation-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 9px; }
 .history-messages { display: grid; gap: 14px; padding: 24px; }
 .history-message { display: grid; gap: 7px; width: min(82%, 680px); border: 1px solid #3a3a4a; border-radius: 10px; background: #1a1a2a; padding: 12px 14px; }

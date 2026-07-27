@@ -35,6 +35,7 @@ import {
 } from "../../../lib/running-data";
 import { fetchWeather, searchKnowledge, searchKnowledgeTool } from "../../../lib/agent-tools";
 import { getRequestUser } from "../../../lib/request-user";
+import { supabase } from "../../../lib/supabase";
 
 export const maxDuration = 90;
 
@@ -993,6 +994,7 @@ export async function POST(req: Request) {
       mode,
       model,
       userId: _rawUserId,
+      trainingId,
     }: {
       image?: RequestImage;
       images?: RequestImage[];

@@ -28,7 +28,7 @@ type WorkoutInput = {
   extractionConfidence?: "user_reported" | "screen_verified" | "partial_screen";
 };
 
-export type WorkoutUpdateInput = Omit<WorkoutInput, "performedOn" | "source"> & {
+export type WorkoutUpdateInput = Partial<Omit<WorkoutInput, "performedOn" | "source">> & {
   performedOn?: string;
   source?: WorkoutInput["source"];
 };

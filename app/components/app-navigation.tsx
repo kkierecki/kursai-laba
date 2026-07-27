@@ -6,6 +6,7 @@ import { useState } from "react";
 import { supabase } from "../../lib/supabase";
 
 const links = [
+  { href: "/trainings", label: "Treningi" },
   { href: "/", label: "🏠 Dashboard" },
   { href: "/chat", label: "💬 Chat" },
   { href: "/history", label: "📜 Historia" },
