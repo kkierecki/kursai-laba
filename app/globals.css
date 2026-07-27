@@ -80,6 +80,12 @@ button {
   display: none;
 }
 
+.nav-other { display: grid; gap: 6px; }
+.nav-other-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; border: 1px solid transparent; border-radius: 8px; background: transparent; color: #bfbfce; padding: 10px 12px; text-align: left; }
+.nav-other-toggle:hover, .nav-other-toggle.active { border-color: #556083; background: #1a1a2a; color: #fff; }
+.nav-other-links { display: grid; gap: 3px; margin-left: 8px; border-left: 1px solid #353546; padding-left: 7px; }
+.nav-other-links a { font-size: .9rem; padding: 8px 10px; }
+
 .history-shell {
   min-height: 100vh;
   padding: 30px;

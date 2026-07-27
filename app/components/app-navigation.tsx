@@ -5,11 +5,15 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { supabase } from "../../lib/supabase";
 
-const links = [
-  { href: "/trainings", label: "Treningi" },
+const runnerLinks = [
   { href: "/", label: "🏠 Dashboard" },
   { href: "/chat", label: "💬 Chat" },
-  { href: "/history", label: "📜 Historia" },
+  { href: "/history", label: "📜 Historia rozmów" },
+  { href: "/trainings", label: "🏃 Historia treningów" },
+  { href: "/race-plan", label: "🏁 Plan na zawody" },
+];
+
+const otherLinks = [
   { href: "/think", label: "🧠 Myślenie" },
   { href: "/fewshot", label: "📚 Słownik AI" },
   { href: "/format", label: "📐 Formatowanie" },
@@ -30,6 +34,7 @@ export function AppNavigation() {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [otherOpen, setOtherOpen] = useState(() => otherLinks.some((link) => pathname.startsWith(link.href)));
 
   if (pathname === "/login") return null;
 
@@ -51,7 +56,7 @@ export function AppNavigation() {
       </button>
       <nav className={`app-nav ${open ? "open" : ""}`} aria-label="Główna nawigacja">
         <div className="nav-brand">Trener Biegania AI</div>
-        {links.map((link) => {
+        {runnerLinks.map((link) => {
           const active = link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
           return (
             <Link
@@ -65,6 +70,22 @@ export function AppNavigation() {
             </Link>
           );
         })}
+        <div className="nav-other">
+          <button
+            aria-expanded={otherOpen}
+            className={`nav-other-toggle ${otherLinks.some((link) => pathname.startsWith(link.href)) ? "active" : ""}`}
+            onClick={() => setOtherOpen((value) => !value)}
+            type="button"
+          >
+            🧰 Inne narzędzia <span aria-hidden="true">{otherOpen ? "⌃" : "⌄"}</span>
+          </button>
+          {otherOpen && <div className="nav-other-links">
+            {otherLinks.map((link) => {
+              const active = pathname.startsWith(link.href);
+              return <Link aria-current={active ? "page" : undefined} className={active ? "active" : ""} href={link.href} key={link.href} onClick={() => setOpen(false)}>{link.label}</Link>;
+            })}
+          </div>}
+        </div>
         <button className="nav-sign-out" onClick={() => void signOut()} type="button">Wyloguj</button>
       </nav>
     </>
