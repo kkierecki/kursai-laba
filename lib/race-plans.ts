@@ -3,7 +3,7 @@ import { supabase } from "./supabase";
 export type RacePlanInput = {
   eventName: string;
   eventDate: string;
-  officialUrl: string;
+  officialUrl?: string;
   planMarkdown: string;
   distanceKm?: number;
   location?: string;
@@ -30,7 +30,7 @@ export async function saveRacePlan(userId: string, input: RacePlanInput) {
   if (findError) throw findError;
   const record = {
     user_id: userId, event_name: input.eventName.trim(), event_date: input.eventDate,
-    distance_km: input.distanceKm, location: input.location?.trim(), official_url: input.officialUrl,
+    distance_km: input.distanceKm, location: input.location?.trim(), official_url: input.officialUrl?.trim() || null,
     event_details: input.eventDetails ?? {}, plan_markdown: input.planMarkdown.trim(), updated_at: new Date().toISOString(),
   };
   const query = existing ? supabase.from("race_plans").update(record).eq("id", existing.id) : supabase.from("race_plans").insert(record);
