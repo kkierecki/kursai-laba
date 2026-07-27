@@ -24,6 +24,15 @@ pnpm dev
 
 Runs the local dev server, normally at `http://127.0.0.1:3000`.
 
+If `pnpm` is not recognized in PowerShell, use the bundled runtime for the current terminal session:
+
+```powershell
+$env:Path = "C:\Users\Krzysztof\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin;C:\Users\Krzysztof\.cache\codex-runtimes\codex-primary-runtime\dependencies\bin\fallback;$env:Path"
+pnpm dev
+```
+
+After **every** code, configuration, `.env.local`, or SQL migration change, restart the local development server before handing the result to the user. Do not rely on hot reload. Stop the current process first so that only one instance uses port 3000, then start `pnpm dev` again.
+
 ```bash
 pnpm build
 ```

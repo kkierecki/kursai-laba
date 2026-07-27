@@ -20,6 +20,7 @@ const links = [
   { href: "/travel", label: "✈️ Podróże" },
   { href: "/extract", label: "📊 Analizator" },
   { href: "/email-triage", label: "📧 E-mail Triage" },
+  { href: "/report", label: "📊 Raporty" },
   { href: "/upload", label: "📚 Baza wiedzy" },
 ];
 

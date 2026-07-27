@@ -24,6 +24,7 @@ import {
 import {
   getRunnerContext,
   getHistoricalTrainingMemory,
+  backfillScreenVerifiedWorkout,
   saveAthleteProfile,
   saveAthleteLocation,
   saveRecoveryLog,
@@ -101,10 +102,11 @@ const toolUsageRules = `## TOOL USAGE RULES
 - When the user says where they live or usually train, call saveAthleteLocation before answering. Use that location to assess terrain and, when relevant, fetch weather before proposing an outdoor workout.
 - When the user gives a stable running-profile value, call saveUserPreference before answering. Use clear keys such as age, weight_kg, sex, hr_max, lactate_threshold_hr, vo2max, heart_rate_zones, cadence_spm, sleep_hours, weekly_availability, running_goal, goal_date, injury_limitations.
 - For HRmax, VO₂max, cadence, threshold, body metrics, availability or limitations, also call saveAthleteProfile. For an explicitly stated goal call saveRunningGoal; for a completed workout call saveWorkout; for sleep or readiness call saveRecoveryLog. Do this after analyzing a screenshot whenever the value is clearly visible.
-- If a newly read profile value differs from the saved value, never overwrite it silently. Only send observedOn when the screenshot/source itself shows an objective date. The save tool will update automatically only if that date is later than the saved observation date; otherwise ask the user whether to update and retry only after an explicit confirmation.
+- If a newly read profile value differs from the saved value, never overwrite only that conflicting value silently. Only send observedOn when the screenshot/source itself shows an objective date. The save tool will update that value automatically only if that date is later than the saved observation date; otherwise ask the user whether to update it and retry only that field after an explicit confirmation. A conflict must never prevent saving other independent, unambiguous profile fields in the same tool call.
+- If the save tool reports requiresConfirmation and the user then says "tak", "potwierdzam" or otherwise explicitly agrees in the same conversation, immediately retry the same conflicting fields with confirmed=true. Do not merely say that they were updated: report the actual tool result.
 - Treat image attachments as training screenshots unless the user says otherwise. When several screenshots are attached, read and compare every one before answering. Extract only values you can see clearly, state uncertainty, and never invent missing metrics.
 - For every attached training screenshot, before the final answer you MUST persist all clearly visible data: use saveAthleteProfile for profile metrics, saveWorkout for a completed activity with an objectively visible date, saveRecoveryLog for recovery data, and saveRunningGoal for an explicitly stated goal. If a required date or a conflicting value prevents saving, explain exactly what is missing or ask for confirmation. Report which records were saved.
-- Do not claim that a workout, goal, or recovery entry was saved unless the corresponding save tool confirmed it.
+- Do not claim that a workout, goal, recovery entry or profile field was saved unless the corresponding save tool confirmed it. If saveAthleteProfile returns both savedFields and conflicts, report savedFields as saved and ask confirmation only for conflicts.
 - Before the final answer, check that every part of the user's request was completed. If a tool fails, try a sensible alternative and explain the limitation only at the end.`;
 
 const knowledgeRules = `
@@ -327,7 +329,8 @@ function createChatTools(userId: string | null) {
       execute: async (input) => {
         try {
           return await saveRunningGoal(userId, input);
-        } catch {
+        } catch (error) {
+          void logTechnical("ERROR", "runner.goal.save.failed", { route: "/api/chat", error });
           return { saved: false, error: "Nie udało się zapisać celu biegowego." };
         }
       },
@@ -344,7 +347,7 @@ function createChatTools(userId: string | null) {
       },
     }),
     saveAthleteProfile: tool({
-      description: "Zapisuje trwałe, ustrukturyzowane parametry biegacza (HRmax, VO2max, kadencję, próg, masę itd.). Przy wartości innej niż zapisana podaj observedOn WYŁĄCZNIE gdy jest jednoznaczna data na screenie/źródle; bez niej najpierw pytaj o zgodę. Ustaw confirmed=true tylko po wyraźnym potwierdzeniu użytkownika.",
+      description: "Zapisuje trwałe, ustrukturyzowane parametry biegacza (HRmax, VO2max, kadencję, próg, masę itd.). Dla sex używaj wyłącznie: male, female, nonbinary lub undisclosed (nigdy M/K). Przy wartości innej niż zapisana podaj observedOn WYŁĄCZNIE gdy jest jednoznaczna data na screenie/źródle; bez niej najpierw pytaj o zgodę. Ustaw confirmed=true tylko po wyraźnym potwierdzeniu użytkownika.",
       inputSchema: jsonSchema<{ birthYear?: number; sex?: "female" | "male" | "nonbinary" | "undisclosed"; weightKg?: number; heightCm?: number; hrMax?: number; lactateThresholdHr?: number; lactateThresholdPaceSeconds?: number; vo2max?: number; typicalCadenceSpm?: number; weeklyAvailability?: string; injuryLimitations?: string; notes?: string; observedOn?: string; confirmed?: boolean }>({
         type: "object",
         properties: { birthYear: { type: "number" }, sex: { type: "string" }, weightKg: { type: "number" }, heightCm: { type: "number" }, hrMax: { type: "number" }, lactateThresholdHr: { type: "number" }, lactateThresholdPaceSeconds: { type: "number" }, vo2max: { type: "number" }, typicalCadenceSpm: { type: "number" }, weeklyAvailability: { type: "string" }, injuryLimitations: { type: "string" }, notes: { type: "string" }, observedOn: { type: "string", description: "Obiektywna data YYYY-MM-DD widoczna w źródle, nigdy data czatu ani pliku." }, confirmed: { type: "boolean" } },
@@ -353,13 +356,14 @@ function createChatTools(userId: string | null) {
       execute: async (input) => {
         try {
           return await saveAthleteProfile(userId, input);
-        } catch {
+        } catch (error) {
+          void logTechnical("ERROR", "runner.profile.save.failed", { route: "/api/chat", error });
           return { saved: false, error: "Nie udało się zapisać profilu biegacza." };
         }
       },
     }),
     saveWorkout: tool({
-      description: "Zapisuje wykonany trening wyłącznie z danymi podanymi przez użytkownika lub wyraźnie widocznymi na screenie. Nie wpisuj wartości domyślnych ani wywnioskowanych.",
+      description: "Zapisuje wykonany trening wyłącznie z danymi podanymi przez użytkownika lub wyraźnie widocznymi na screenie. Wymagane są tylko: obiektywnie widoczna/data podana przez użytkownika, krótki opis oraz źródło. durationSeconds i wszystkie metryki są opcjonalne — zapisuj trening także wtedy, gdy czas trwania nie jest znany. Nie wpisuj wartości domyślnych ani wywnioskowanych.",
       inputSchema: jsonSchema<{ performedOn: string; summary: string; source: "garmin" | "strava" | "screenshot" | "chat" | "manual" | "other"; trainingType?: "easy" | "long" | "tempo" | "threshold" | "intervals" | "recovery" | "race" | "cross_training" | "other"; distanceM?: number; durationSeconds?: number; averagePaceSeconds?: number; averageHr?: number; maxHr?: number; averageCadenceSpm?: number; elevationGainM?: number; rpe?: number; unstructuredNotes?: string; extractionConfidence?: "user_reported" | "screen_verified" | "partial_screen" }>({
         type: "object",
         properties: { performedOn: { type: "string" }, summary: { type: "string" }, source: { type: "string" }, trainingType: { type: "string" }, distanceM: { type: "number" }, durationSeconds: { type: "number" }, averagePaceSeconds: { type: "number" }, averageHr: { type: "number" }, maxHr: { type: "number" }, averageCadenceSpm: { type: "number" }, elevationGainM: { type: "number" }, rpe: { type: "number" }, unstructuredNotes: { type: "string" }, extractionConfidence: { type: "string" } },
@@ -369,7 +373,8 @@ function createChatTools(userId: string | null) {
       execute: async (input) => {
         try {
           return await saveWorkout(userId, input);
-        } catch {
+        } catch (error) {
+          void logTechnical("ERROR", "runner.workout.save.failed", { route: "/api/chat", error });
           return { saved: false, error: "Nie udało się zapisać treningu." };
         }
       },
@@ -445,14 +450,16 @@ Nie udało się odczytać bazy treningowej. Nie zakładaj żadnych wartości i p
 }
 
 function isProfileBackfillCommand(text: string) {
-  return text.trim().toLowerCase().startsWith("/uzupelnij-profil");
+  const normalized = text.trim().toLocaleLowerCase("pl-PL").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  // Akceptujemy też często wpisywane /uzpelnij-profil (bez drugiego "u").
+  return normalized.startsWith("/uzupelnij-profil") || normalized.startsWith("/uzpelnij-profil");
 }
 
 async function createHistoricalBackfillPrompt(userId: string) {
   try {
     const history = await getHistoricalTrainingMemory(userId);
     return `## HISTORIA DO UZUPEŁNIENIA PROFILU
-Użytkownik wywołał /uzupelnij-profil. Przejrzyj poniższą historię i zapisz przez narzędzia tylko dane jednoznacznie podane przez użytkownika albo wyraźnie oznaczone w odpowiedzi asystenta jako odczytane ze screena. Dla każdej znalezionej wartości MUSISZ użyć właściwego narzędzia zapisu; nie wystarczy jej wymienić w odpowiedzi.
+Użytkownik wywołał /uzupelnij-profil. Przejrzyj poniższą historię i zapisz przez narzędzia tylko dane jednoznacznie podane przez użytkownika albo wyraźnie oznaczone w odpowiedzi asystenta jako odczytane ze screena. Dla każdej znalezionej wartości MUSISZ użyć właściwego narzędzia zapisu; nie wystarczy jej wymienić w odpowiedzi. Historyczny trening ze zweryfikowanego screena jest zapisywany deterministycznie przez serwer przed Twoją odpowiedzią: jego wynik przekazany niżej jest nadrzędny. Nigdy nie próbuj zapisywać go ponownie przez saveWorkout i nigdy nie twierdź, że do jego zapisu wymagany jest czas w sekundach.
 Nie traktuj daty wiadomości jako daty treningu ani daty pomiaru. Nie zapisuj przypuszczeń, rekomendacji ani wartości przykładowych. Jeśli wartość koliduje z profilem, respektuj mechanizm potwierdzenia narzędzia. Na końcu podaj listę zapisanych rekordów i danych, których nie udało się zapisać.
 ${JSON.stringify(history)}`;
   } catch {
@@ -504,7 +511,7 @@ function getLastUserText(messages: UIMessage[]) {
 function isBusinessCommand(text: string) {
   const normalized = text.trim().toLowerCase();
 
-  return normalized.startsWith("/trening") || normalized.startsWith("/podsumowanie") || normalized.startsWith("/uzupelnij-profil");
+  return normalized.startsWith("/trening") || normalized.startsWith("/podsumowanie") || isProfileBackfillCommand(text);
 }
 
 function calculateExpression(expression: string) {
@@ -618,6 +625,7 @@ function createModelResponse({
   tools,
   requestId,
   forceToolUse = false,
+  forceBackfillWorkout = false,
 }: {
   abortSignal?: AbortSignal;
   messages: ModelMessage[];
@@ -626,6 +634,7 @@ function createModelResponse({
   system: string;
   tools: ReturnType<typeof createChatTools>;
   forceToolUse?: boolean;
+  forceBackfillWorkout?: boolean;
 }) {
   const result = streamText({
     model: google(model),
@@ -634,7 +643,12 @@ function createModelResponse({
     abortSignal,
     messages,
     tools,
-    toolChoice: forceToolUse ? "required" : "auto",
+    toolChoice: "auto",
+    prepareStep: ({ stepNumber }) => {
+      if (forceBackfillWorkout && (stepNumber === 0 || stepNumber === 1)) return { toolChoice: "required" };
+      if (forceToolUse && stepNumber === 0) return { toolChoice: "required" };
+      return { toolChoice: "auto" };
+    },
     // maxSteps: 3 (odpowiednik w AI SDK 7)
     stopWhen: isStepCount(6),
     onStepEnd: ({ stepNumber, toolCalls, toolResults }) => {
@@ -658,6 +672,8 @@ function createModelResponse({
       });
     },
     onToolExecutionEnd: ({ toolCall, toolExecutionMs, toolOutput }) => {
+      const output = toolOutput as { type: string; output?: { saved?: boolean; requiresConfirmation?: boolean; error?: string; conflicts?: Array<{ field?: string }> } };
+      const result = output.output;
       void logTechnical("INFO", "ai.tool.finished", {
         route: "/api/chat",
         requestId,
@@ -665,7 +681,11 @@ function createModelResponse({
         toolName: toolCall.toolName,
         toolCallId: toolCall.toolCallId,
         durationMs: toolExecutionMs,
-        outputType: toolOutput.type,
+        outputType: output.type,
+        saved: result?.saved,
+        requiresConfirmation: result?.requiresConfirmation,
+        error: result?.error,
+        conflictFields: result?.conflicts?.map((conflict) => conflict.field).filter(Boolean),
       });
     },
     onError: ({ error }) => {
@@ -791,12 +811,14 @@ function createFlashStreamWithFallback({
   system,
   tools,
   forceToolUse,
+  forceBackfillWorkout,
 }: {
   messages: ModelMessage[];
   requestId?: string;
   system: string;
   tools: ReturnType<typeof createChatTools>;
   forceToolUse?: boolean;
+  forceBackfillWorkout?: boolean;
 }) {
   return new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -815,6 +837,7 @@ function createFlashStreamWithFallback({
           system,
           tools,
           forceToolUse,
+          forceBackfillWorkout,
         });
         const primaryReader = primaryResponse.body?.getReader();
 
@@ -880,6 +903,7 @@ function createFlashStreamWithFallback({
             system,
             tools,
             forceToolUse,
+            forceBackfillWorkout,
           });
 
           await pipeResponse(fallbackResponse, controller);
@@ -911,6 +935,7 @@ function createSelectedModelStream({
   system,
   tools,
   forceToolUse,
+  forceBackfillWorkout,
 }: {
   aiModel: AiModel;
   messages: ModelMessage[];
@@ -918,6 +943,7 @@ function createSelectedModelStream({
   system: string;
   tools: ReturnType<typeof createChatTools>;
   forceToolUse?: boolean;
+  forceBackfillWorkout?: boolean;
 }) {
   if (aiModel === "pro") {
     return createModelResponse({
@@ -927,10 +953,11 @@ function createSelectedModelStream({
       system,
       tools,
       forceToolUse,
+      forceBackfillWorkout,
     }).body;
   }
 
-  return createFlashStreamWithFallback({ messages, requestId, system, tools, forceToolUse });
+  return createFlashStreamWithFallback({ messages, requestId, system, tools, forceToolUse, forceBackfillWorkout });
 }
 
 export async function POST(req: Request) {
@@ -981,8 +1008,18 @@ export async function POST(req: Request) {
       ? `${systemPrompts[selectedMode]}\n\n${businessCommandPrompt}`
       : systemPrompts[selectedMode];
     const trainingContext = await createTrainingContextPrompt(userId);
-    const historicalBackfill = isProfileBackfillCommand(lastUserText)
-      ? `\n\n${await createHistoricalBackfillPrompt(userId)}`
+    const isProfileBackfill = isProfileBackfillCommand(lastUserText);
+    let workoutBackfillResult: unknown = null;
+    if (isProfileBackfill) {
+      try {
+        workoutBackfillResult = await backfillScreenVerifiedWorkout(userId);
+        void logTechnical("INFO", "runner.workout.backfill.completed", { route: "/api/chat", requestId: requestLog.requestId, result: workoutBackfillResult });
+      } catch (error) {
+        void logTechnical("ERROR", "runner.workout.backfill.failed", { route: "/api/chat", requestId: requestLog.requestId, error });
+      }
+    }
+    const historicalBackfill = isProfileBackfill
+      ? `\n\n${await createHistoricalBackfillPrompt(userId)}\n\nWynik deterministycznego zapisu treningu ze zweryfikowanego screena: ${JSON.stringify(workoutBackfillResult)}. Uwzględnij go dokładnie w odpowiedzi.`
       : "";
     const system = `${baseSystem}\n\n${createPersonalizationPrompt(profile)}\n\n${trainingContext}${historicalBackfill}`;
     const modelMessages = await convertToModelMessages(requestMessages, {
@@ -994,7 +1031,8 @@ export async function POST(req: Request) {
       requestId: requestLog.requestId,
       system,
       tools: requestTools,
-      forceToolUse: isProfileBackfillCommand(lastUserText) || (images?.length ?? (image ? 1 : 0)) > 0,
+      forceToolUse: (images?.length ?? (image ? 1 : 0)) > 0,
+      forceBackfillWorkout: false,
     });
 
     if (!stream) {

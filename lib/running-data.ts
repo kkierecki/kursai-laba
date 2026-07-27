@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { saveUserPreference } from "./user-profile";
 
 type RunningGoalInput = {
   title: string;
@@ -63,6 +64,16 @@ function compact<T extends Record<string, unknown>>(value: T) {
   );
 }
 
+function normalizeSex(value: AthleteProfileInput["sex"] | string | undefined) {
+  if (!value) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (["male", "m", "man", "mężczyzna", "mezczyzna"].includes(normalized)) return "male" as const;
+  if (["female", "f", "k", "woman", "kobieta"].includes(normalized)) return "female" as const;
+  if (["nonbinary", "non-binary", "niebinarna", "niebinarny"].includes(normalized)) return "nonbinary" as const;
+  if (["undisclosed", "nie podano", "brak"].includes(normalized)) return "undisclosed" as const;
+  return undefined;
+}
+
 export async function getRunnerContext(userId: string) {
   const [profile, goals, workout, recovery, conversation] = await Promise.all([
     supabase.from("athlete_profiles").select("*").eq("user_id", userId).maybeSingle(),
@@ -105,8 +116,56 @@ export async function getHistoricalTrainingMemory(userId: string) {
     }));
 }
 
+export async function backfillScreenVerifiedWorkout(userId: string) {
+  const history = await getHistoricalTrainingMemory(userId);
+  const screenSummary = [...history].reverse().find((message) =>
+    message.role === "assistant"
+    && /wykonałeś.*\d+[,.]\d+\s*km/i.test(message.content)
+    && /czas\s*\d{1,2}:\d{2}/i.test(message.content),
+  );
+  if (!screenSummary) return { saved: false, reason: "not_found" as const };
+
+  const match = screenSummary.content.match(/\((\d{1,2})\.(\d{1,2})\)[\s\S]*?(\d+[,.]\d+)\s*km,\s*czas\s*(\d{1,2}):(\d{2}),\s*średnie tętno\s*(\d+)\s*bpm[\s\S]*?tempo\s*(\d{1,2}):(\d{2})/i);
+  if (!match) return { saved: false, reason: "incomplete" as const };
+
+  const [, day, month, distance, minutes, seconds, averageHr, paceMinutes, paceSeconds] = match;
+  const now = new Date();
+  let year = now.getFullYear();
+  const monthNumber = Number(month);
+  const dayNumber = Number(day);
+  const todayMonth = now.getMonth() + 1;
+  const todayDay = now.getDate();
+  if (monthNumber > todayMonth || (monthNumber === todayMonth && dayNumber > todayDay)) year -= 1;
+  const performedOn = `${year}-${String(monthNumber).padStart(2, "0")}-${String(dayNumber).padStart(2, "0")}`;
+  const distanceM = Math.round(Number(distance.replace(",", ".")) * 1000);
+  const durationSeconds = Number(minutes) * 60 + Number(seconds);
+
+  const { data: existing, error: existingError } = await supabase
+    .from("workouts")
+    .select("id,performed_on")
+    .eq("user_id", userId)
+    .eq("performed_on", performedOn)
+    .eq("distance_m", distanceM)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existing) return { saved: true, alreadySaved: true, id: existing.id, performedOn };
+
+  return saveWorkout(userId, {
+    performedOn,
+    summary: `Bieg ${distance.replace(",", ".")} km`,
+    source: "screenshot",
+    trainingType: "easy",
+    distanceM,
+    durationSeconds,
+    averagePaceSeconds: Number(paceMinutes) * 60 + Number(paceSeconds),
+    averageHr: Number(averageHr),
+    unstructuredNotes: "Zapis automatyczny z historycznej analizy screena.",
+    extractionConfidence: "screen_verified",
+  });
+}
+
 export async function saveRunningGoal(userId: string, input: RunningGoalInput) {
-  const { data, error } = await supabase.from("running_goals").insert(compact({
+  const goal = compact({
     user_id: userId,
     title: input.title.trim(),
     description: input.description?.trim(),
@@ -114,7 +173,19 @@ export async function saveRunningGoal(userId: string, input: RunningGoalInput) {
     target_value: input.targetValue,
     target_unit: input.targetUnit?.trim(),
     target_date: input.targetDate,
-  })).select("id,title").single();
+  });
+  const { data: existing, error: findError } = await supabase
+    .from("running_goals")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .ilike("title", input.title.trim())
+    .maybeSingle();
+  if (findError) throw findError;
+
+  const { data, error } = existing
+    ? await supabase.from("running_goals").update({ ...goal, updated_at: new Date().toISOString() }).eq("id", existing.id).select("id,title").single()
+    : await supabase.from("running_goals").insert(goal).select("id,title").single();
   if (error) throw error;
   return { saved: true, ...data };
 }
@@ -125,7 +196,16 @@ export async function saveAthleteLocation(userId: string, homeLocation: string) 
     home_location: homeLocation.trim(),
     updated_at: new Date().toISOString(),
   });
-  if (error) throw error;
+  if (error) {
+    // Starsza, używana już baza nie ma jeszcze kolumny home_location.
+    // Lokalizacja pozostaje trwała w profilu użytkownika i dashboard ma
+    // dla niej odczyt zapasowy, aż do uruchomienia migracji 003.
+    if (error.message.includes("home_location")) {
+      await saveUserPreference(userId, "home_location", homeLocation.trim());
+      return { saved: true, homeLocation: homeLocation.trim(), storage: "user_preferences" };
+    }
+    throw error;
+  }
   return { saved: true, homeLocation: homeLocation.trim() };
 }
 
@@ -134,12 +214,23 @@ export async function saveAthleteProfile(userId: string, input: AthleteProfileIn
     !["observedOn", "confirmed"].includes(key) && value !== undefined,
   );
   if (!hasProfileData) return { saved: false, error: "Brak parametrów profilu do zapisania." };
+  const normalizedSex = normalizeSex(input.sex);
   const { data: existing, error: loadError } = await supabase
     .from("athlete_profiles")
-    .select("birth_year,weight_kg,height_cm,hr_max,lactate_threshold_hr,lactate_threshold_pace_seconds,vo2max,typical_cadence_spm,metric_observed_at")
+    .select("birth_year,weight_kg,height_cm,hr_max,lactate_threshold_hr,lactate_threshold_pace_seconds,vo2max,typical_cadence_spm")
     .eq("user_id", userId)
     .maybeSingle();
   if (loadError) throw loadError;
+
+  // Wdrożenia sprzed migracji 004 nadal zapisują profil; tracą jedynie
+  // automatyczne porównanie obiektywnych dat pomiarów do czasu jej uruchomienia.
+  const metricDates = await supabase
+    .from("athlete_profiles")
+    .select("metric_observed_at")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const supportsMetricDates = !metricDates.error;
+  if (metricDates.error && !metricDates.error.message.includes("metric_observed_at")) throw metricDates.error;
 
   const metrics = [
     ["birth_year", input.birthYear], ["weight_kg", input.weightKg], ["height_cm", input.heightCm],
@@ -147,8 +238,8 @@ export async function saveAthleteProfile(userId: string, input: AthleteProfileIn
     ["lactate_threshold_pace_seconds", input.lactateThresholdPaceSeconds], ["vo2max", input.vo2max],
     ["typical_cadence_spm", input.typicalCadenceSpm],
   ] as const;
-  const observedAt = (existing?.metric_observed_at && typeof existing.metric_observed_at === "object"
-    ? existing.metric_observed_at : {}) as Record<string, string>;
+  const observedAt = (metricDates.data?.metric_observed_at && typeof metricDates.data.metric_observed_at === "object"
+    ? metricDates.data.metric_observed_at : {}) as Record<string, string>;
   const conflicts = metrics.flatMap(([key, nextValue]) => {
     const currentValue = existing?.[key];
     if (nextValue === undefined || currentValue === null || currentValue === undefined || Number(currentValue) === nextValue) return [];
@@ -156,31 +247,43 @@ export async function saveAthleteProfile(userId: string, input: AthleteProfileIn
     const isObjectivelyNewer = Boolean(input.observedOn && previousDate && input.observedOn > previousDate);
     return input.confirmed || isObjectivelyNewer ? [] : [{ field: key, currentValue, proposedValue: nextValue, previousObservedOn: previousDate ?? null }];
   });
-  if (conflicts.length > 0) return { saved: false, requiresConfirmation: true, conflicts };
+  const blockedFields = new Set<string>(conflicts.map((conflict) => conflict.field));
+  const acceptedMetrics = metrics.filter(([key, value]) => value !== undefined && !blockedFields.has(key));
 
   const nextObservedAt = { ...observedAt };
   if (input.observedOn) {
-    metrics.forEach(([key, value]) => { if (value !== undefined) nextObservedAt[key] = input.observedOn as string; });
+    acceptedMetrics.forEach(([key]) => { nextObservedAt[key] = input.observedOn as string; });
   }
-  const { error } = await supabase.from("athlete_profiles").upsert(compact({
+  const accepts = (field: string) => !blockedFields.has(field);
+  const profile = compact({
     user_id: userId,
-    birth_year: input.birthYear,
-    sex: input.sex,
-    weight_kg: input.weightKg,
-    height_cm: input.heightCm,
-    hr_max: input.hrMax,
-    lactate_threshold_hr: input.lactateThresholdHr,
-    lactate_threshold_pace_seconds: input.lactateThresholdPaceSeconds,
-    vo2max: input.vo2max,
-    typical_cadence_spm: input.typicalCadenceSpm,
+    birth_year: accepts("birth_year") ? input.birthYear : undefined,
+    sex: normalizedSex,
+    weight_kg: accepts("weight_kg") ? input.weightKg : undefined,
+    height_cm: accepts("height_cm") ? input.heightCm : undefined,
+    hr_max: accepts("hr_max") ? input.hrMax : undefined,
+    lactate_threshold_hr: accepts("lactate_threshold_hr") ? input.lactateThresholdHr : undefined,
+    lactate_threshold_pace_seconds: accepts("lactate_threshold_pace_seconds") ? input.lactateThresholdPaceSeconds : undefined,
+    vo2max: accepts("vo2max") ? input.vo2max : undefined,
+    typical_cadence_spm: accepts("typical_cadence_spm") ? input.typicalCadenceSpm : undefined,
     weekly_availability: input.weeklyAvailability?.trim(),
     injury_limitations: input.injuryLimitations?.trim(),
     notes: input.notes?.trim(),
-    metric_observed_at: nextObservedAt,
     updated_at: new Date().toISOString(),
-  }));
+  });
+  const savedFields = [
+    ...acceptedMetrics.map(([key]) => key),
+    ...(normalizedSex !== undefined ? ["sex"] : []),
+    ...(input.weeklyAvailability !== undefined ? ["weekly_availability"] : []),
+    ...(input.injuryLimitations !== undefined ? ["injury_limitations"] : []),
+    ...(input.notes !== undefined ? ["notes"] : []),
+  ];
+  if (savedFields.length === 0) return { saved: false, requiresConfirmation: conflicts.length > 0, conflicts, savedFields };
+  const { error } = await supabase.from("athlete_profiles").upsert(supportsMetricDates
+    ? { ...profile, metric_observed_at: nextObservedAt }
+    : profile);
   if (error) throw error;
-  return { saved: true };
+  return { saved: true, savedFields, requiresConfirmation: conflicts.length > 0, conflicts };
 }
 
 export async function saveWorkout(userId: string, input: WorkoutInput) {
