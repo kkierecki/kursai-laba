@@ -21,6 +21,7 @@ const links = [
   { href: "/extract", label: "📊 Analizator" },
   { href: "/email-triage", label: "📧 E-mail Triage" },
   { href: "/report", label: "📊 Raporty" },
+  { href: "/competitor", label: "🏢 Konkurencja" },
   { href: "/upload", label: "📚 Baza wiedzy" },
 ];
 

@@ -97,6 +97,7 @@ export function ChatHome() {
   const persistedMessageIdsRef = useRef<Set<string>>(new Set());
   const persistenceQueueRef = useRef<Promise<void>>(Promise.resolve());
   const userIdRef = useRef<string | null>(null);
+  const trainingIdRef = useRef<string | null>(null);
   const {
     attachedImage,
     attachedImages,
@@ -142,6 +143,7 @@ export function ChatHome() {
               mode: modeRef.current,
               model: aiModelRef.current,
               userId: userIdRef.current,
+              trainingId: trainingIdRef.current,
             },
           };
         },
@@ -202,6 +204,10 @@ export function ChatHome() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    trainingIdRef.current = new URLSearchParams(window.location.search).get("training");
   }, []);
 
   useEffect(() => {

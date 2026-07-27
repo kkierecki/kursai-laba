@@ -28,6 +28,11 @@ type WorkoutInput = {
   extractionConfidence?: "user_reported" | "screen_verified" | "partial_screen";
 };
 
+export type WorkoutUpdateInput = Omit<WorkoutInput, "performedOn" | "source"> & {
+  performedOn?: string;
+  source?: WorkoutInput["source"];
+};
+
 type RecoveryInput = {
   loggedOn: string;
   sleepHours?: number;
@@ -307,6 +312,40 @@ export async function saveWorkout(userId: string, input: WorkoutInput) {
   })).select("id,performed_on").single();
   if (error) throw error;
   return { saved: true, ...data };
+}
+
+export async function updateWorkout(userId: string, workoutId: string, input: WorkoutUpdateInput) {
+  const update = compact({
+    performed_on: input.performedOn,
+    summary: input.summary?.trim(),
+    source: input.source,
+    training_type: input.trainingType,
+    distance_m: input.distanceM,
+    duration_seconds: input.durationSeconds,
+    average_pace_seconds: input.averagePaceSeconds,
+    average_hr: input.averageHr,
+    max_hr: input.maxHr,
+    average_cadence_spm: input.averageCadenceSpm,
+    elevation_gain_m: input.elevationGainM,
+    rpe: input.rpe,
+    unstructured_notes: input.unstructuredNotes?.trim(),
+    extraction_confidence: input.extractionConfidence,
+    updated_at: new Date().toISOString(),
+  });
+  if (Object.keys(update).length === 1) return { saved: false, error: "Brak danych treningu do zmiany." };
+  const { data, error } = await supabase.from("workouts")
+    .update(update).eq("id", workoutId).eq("user_id", userId)
+    .select("id,performed_on,summary").maybeSingle();
+  if (error) throw error;
+  if (!data) return { saved: false, error: "Nie znaleziono wskazanego treningu." };
+  return { saved: true, ...data };
+}
+
+export async function deleteWorkout(userId: string, workoutId: string) {
+  const { data, error } = await supabase.from("workouts")
+    .delete().eq("id", workoutId).eq("user_id", userId).select("id").maybeSingle();
+  if (error) throw error;
+  return data ? { deleted: true, id: data.id } : { deleted: false, error: "Nie znaleziono wskazanego treningu." };
 }
 
 export async function saveRecoveryLog(userId: string, input: RecoveryInput) {

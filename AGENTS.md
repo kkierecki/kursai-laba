@@ -2,7 +2,9 @@
 
 ## Project Structure & Module Organization
 
-This is a Next.js App Router project for the `moj-agent` chatbot.
+This is a Next.js App Router project for an individual Polish running coach, formerly a sailing chatbot. The agent maintains a runner profile, analyzes Garmin/Strava screenshots, remembers workouts and recovery, tracks descriptive running goals, and recommends safe next sessions based only on known data.
+
+Never invent a runner metric. Persist only user-provided or clearly screen-verified values. A conflict in one metric must not block independent confirmed values; ask for confirmation only for the conflicting field unless an objectively newer source date permits the update. Before recommending a next workout, compare the current date with the last workout, latest conversation, and recovery record.
 
 - `app/page.tsx` contains the main chat UI.
 - `app/think/page.tsx` contains the deep-thinking chat page.

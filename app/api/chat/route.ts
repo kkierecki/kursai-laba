@@ -30,6 +30,8 @@ import {
   saveRecoveryLog,
   saveRunningGoal,
   saveWorkout,
+  updateWorkout,
+  deleteWorkout,
 } from "../../../lib/running-data";
 import { fetchWeather, searchKnowledge, searchKnowledgeTool } from "../../../lib/agent-tools";
 import { getRequestUser } from "../../../lib/request-user";
@@ -377,6 +379,26 @@ function createChatTools(userId: string | null) {
           void logTechnical("ERROR", "runner.workout.save.failed", { route: "/api/chat", error });
           return { saved: false, error: "Nie udało się zapisać treningu." };
         }
+      },
+    }),
+    updateWorkout: tool({
+      description: "Aktualizuje istniejący trening wyłącznie danymi jawnie podanymi przez użytkownika. Używaj tylko przy konkretnym workoutId z kontekstu edycji; nie wymyślaj metryk.",
+      inputSchema: jsonSchema<{ workoutId: string; performedOn?: string; summary?: string; trainingType?: "easy" | "long" | "tempo" | "threshold" | "intervals" | "recovery" | "race" | "cross_training" | "other"; distanceM?: number; durationSeconds?: number; averagePaceSeconds?: number; averageHr?: number; maxHr?: number; averageCadenceSpm?: number; elevationGainM?: number; rpe?: number; unstructuredNotes?: string }>({
+        type: "object",
+        properties: { workoutId: { type: "string" }, performedOn: { type: "string" }, summary: { type: "string" }, trainingType: { type: "string" }, distanceM: { type: "number" }, durationSeconds: { type: "number" }, averagePaceSeconds: { type: "number" }, averageHr: { type: "number" }, maxHr: { type: "number" }, averageCadenceSpm: { type: "number" }, elevationGainM: { type: "number" }, rpe: { type: "number" }, unstructuredNotes: { type: "string" } },
+        required: ["workoutId"], additionalProperties: false,
+      }),
+      execute: async ({ workoutId, ...input }) => {
+        try { return await updateWorkout(userId, workoutId, input); }
+        catch (error) { void logTechnical("ERROR", "runner.workout.update.failed", { route: "/api/chat", error }); return { saved: false, error: "Nie udało się zmienić treningu." }; }
+      },
+    }),
+    deleteWorkout: tool({
+      description: "Usuwa trening tylko po jednoznacznym poleceniu użytkownika, dla workoutId z kontekstu edycji.",
+      inputSchema: jsonSchema<{ workoutId: string }>({ type: "object", properties: { workoutId: { type: "string" } }, required: ["workoutId"], additionalProperties: false }),
+      execute: async ({ workoutId }) => {
+        try { return await deleteWorkout(userId, workoutId); }
+        catch (error) { void logTechnical("ERROR", "runner.workout.delete.failed", { route: "/api/chat", error }); return { deleted: false, error: "Nie udało się usunąć treningu." }; }
       },
     }),
     saveRecoveryLog: tool({
@@ -978,6 +1000,7 @@ export async function POST(req: Request) {
       mode?: unknown;
       model?: unknown;
       userId?: unknown;
+      trainingId?: unknown;
     } = await req.json();
 
     const authenticatedUser = await getRequestUser(req);
@@ -1008,6 +1031,12 @@ export async function POST(req: Request) {
       ? `${systemPrompts[selectedMode]}\n\n${businessCommandPrompt}`
       : systemPrompts[selectedMode];
     const trainingContext = await createTrainingContextPrompt(userId);
+    const selectedTraining = typeof trainingId === "string"
+      ? await supabase.from("workouts").select("id,performed_on,summary,training_type,distance_m,duration_seconds,average_pace_seconds,average_hr,max_hr,average_cadence_spm,elevation_gain_m,rpe,unstructured_notes").eq("id", trainingId).eq("user_id", userId).maybeSingle()
+      : { data: null, error: null };
+    const editingContext = selectedTraining.data
+      ? `\n\n## EDYCJA WYBRANEGO TRENINGU\nUżytkownik edytuje wyłącznie ten rekord: ${JSON.stringify(selectedTraining.data)}. Gdy prosi o zmianę, użyj updateWorkout z workoutId=${selectedTraining.data.id} i tylko podanymi polami. Gdy prosi o usunięcie, najpierw poproś o jednoznaczne potwierdzenie, a po jego otrzymaniu użyj deleteWorkout.`
+      : "";
     const isProfileBackfill = isProfileBackfillCommand(lastUserText);
     let workoutBackfillResult: unknown = null;
     if (isProfileBackfill) {
@@ -1021,7 +1050,7 @@ export async function POST(req: Request) {
     const historicalBackfill = isProfileBackfill
       ? `\n\n${await createHistoricalBackfillPrompt(userId)}\n\nWynik deterministycznego zapisu treningu ze zweryfikowanego screena: ${JSON.stringify(workoutBackfillResult)}. Uwzględnij go dokładnie w odpowiedzi.`
       : "";
-    const system = `${baseSystem}\n\n${createPersonalizationPrompt(profile)}\n\n${trainingContext}${historicalBackfill}`;
+    const system = `${baseSystem}\n\n${createPersonalizationPrompt(profile)}\n\n${trainingContext}${editingContext}${historicalBackfill}`;
     const modelMessages = await convertToModelMessages(requestMessages, {
       tools: requestTools,
     });
