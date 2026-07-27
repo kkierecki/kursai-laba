@@ -9,10 +9,18 @@ type Profile = { home_location: string | null; hr_max: number | null; vo2max: nu
 type Goal = { title: string; target_date: string | null; target_metric: string | null; target_value: number | null; target_unit: string | null };
 type Workout = { performed_on: string; summary: string; distance_m: number | null; average_pace_seconds: number | null; average_hr: number | null };
 type Recovery = { logged_on: string; sleep_hours: number | null; fatigue: number | null; soreness: number | null };
+type StoredPreferences = Record<string, string>;
 
 function pace(seconds: number | null) {
   if (!seconds) return "brak danych";
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}/km`;
+}
+
+function preferenceNumber(preferences: StoredPreferences, ...keys: string[]) {
+  const value = keys.map((key) => preferences[key]).find(Boolean);
+  if (!value) return null;
+  const number = Number(value.replace(",", "."));
+  return Number.isFinite(number) ? number : null;
 }
 
 export default function DashboardPage() {
@@ -33,14 +41,27 @@ export default function DashboardPage() {
       supabase.from("running_goals").select("title,target_date,target_metric,target_value,target_unit").eq("user_id", user.id).eq("status", "active").order("priority").limit(1).maybeSingle(),
       supabase.from("workouts").select("performed_on,summary,distance_m,average_pace_seconds,average_hr").eq("user_id", user.id).order("performed_on", { ascending: false }).limit(1).maybeSingle(),
       supabase.from("recovery_logs").select("logged_on,sleep_hours,fatigue,soreness").eq("user_id", user.id).order("logged_on", { ascending: false }).limit(1).maybeSingle(),
-      supabase.from("user_profiles").select("name").eq("id", user.id).maybeSingle(),
+      supabase.from("user_profiles").select("name,preferences").eq("id", user.id).maybeSingle(),
     ]);
-    setProfile(profileResult.data);
-    setGoal(goalResult.data);
+    const preferences = (userProfileResult.data?.preferences ?? {}) as StoredPreferences;
+    const savedProfile = profileResult.data;
+    setProfile({
+      home_location: savedProfile?.home_location ?? preferences.home_location ?? preferences.location ?? null,
+      hr_max: savedProfile?.hr_max ?? preferenceNumber(preferences, "hr_max", "hrmax"),
+      vo2max: savedProfile?.vo2max ?? preferenceNumber(preferences, "vo2max", "vo2_max"),
+      typical_cadence_spm: savedProfile?.typical_cadence_spm ?? preferenceNumber(preferences, "cadence_spm", "cadence"),
+    });
+    setGoal(goalResult.data ?? (preferences.running_goal ? {
+      title: preferences.running_goal,
+      target_date: preferences.goal_date ?? null,
+      target_metric: null,
+      target_value: null,
+      target_unit: null,
+    } : null));
     setWorkout(workoutResult.data);
     setRecovery(recoveryResult.data);
     setUserName(userProfileResult.data?.name?.trim() || null);
-    const city = profileResult.data?.home_location;
+    const city = savedProfile?.home_location ?? preferences.home_location ?? preferences.location;
     if (city) {
       const response = await fetch(`/api/dashboard?section=weather&city=${encodeURIComponent(city)}`, { cache: "no-store" });
       if (response.ok) setWeather((await response.json() as { weather: Weather }).weather);

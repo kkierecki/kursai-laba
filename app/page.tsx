@@ -85,7 +85,7 @@ export function ChatHome() {
   const [isCreatingConversation, setIsCreatingConversation] = useState(false);
   const [persistenceError, setPersistenceError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
-  const pendingImageRef = useRef<AttachedImage | null>(null);
+  const pendingImageRef = useRef<AttachedImage[]>([]);
   const modeRef = useRef<ChatMode>("casual");
   const aiModelRef = useRef<AiModel>("flash");
   const pendingModeRef = useRef<ChatMode>("casual");
@@ -99,8 +99,11 @@ export function ChatHome() {
   const userIdRef = useRef<string | null>(null);
   const {
     attachedImage,
+    attachedImages,
     attachFile,
+    attachFiles,
     clearAttachedImage,
+    removeImage,
     fileInputRef,
     handleDragLeave,
     handleDragOver,
@@ -132,7 +135,7 @@ export function ChatHome() {
             body: {
               ...body,
               id,
-              image: pendingImageRef.current,
+              images: pendingImageRef.current,
               messages,
               messageId,
               trigger,
@@ -476,12 +479,12 @@ export function ChatHome() {
 
     pendingModeRef.current = mode;
     pendingAiModelRef.current = aiModel;
-    pendingImageRef.current = attachedImage;
+    pendingImageRef.current = attachedImages;
     setInput("");
     clearAttachedImage();
     void ensureConversation(text);
     await sendMessage({ text });
-    pendingImageRef.current = null;
+    pendingImageRef.current = [];
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -565,7 +568,7 @@ export function ChatHome() {
           </div>
         </header>
 
-        <HiddenImageInput fileInputRef={fileInputRef} onFile={attachFile} />
+        <HiddenImageInput fileInputRef={fileInputRef} onFiles={attachFiles} />
 
         <section className="memory-panel" aria-label="Kontekst rozmowy">
           <button
@@ -709,8 +712,12 @@ export function ChatHome() {
           ))}
         </div>
 
-        {attachedImage && (
-          <AttachmentPreview image={attachedImage} onRemove={clearAttachedImage} />
+        {attachedImages.length > 0 && (
+          <div className="attachment-list">
+            {attachedImages.map((image, index) => (
+              <AttachmentPreview image={image} key={`${image.filename}-${index}`} onRemove={() => removeImage(index)} />
+            ))}
+          </div>
         )}
         {imageError && <p className="image-error">{imageError}</p>}
 

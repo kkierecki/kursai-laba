@@ -83,6 +83,7 @@ Keep database schema changes in `supabase/migrations/` as committed, numbered SQ
 1. `001_initial_agent_memory.sql`
 2. `002_running_mvp.sql`
 3. `003_add_athlete_home_location.sql`
+4. `004_add_metric_observation_dates.sql`
 
 For every new schema change, add a new migration with the next number and a descriptive snake_case name. Do not edit a migration that may already have been applied to a shared environment; add a follow-up migration instead. Never commit `.env.local` or Supabase keys.
 

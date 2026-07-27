@@ -16,7 +16,8 @@ create table if not exists public.athlete_profiles (
   typical_cadence_spm smallint check (typical_cadence_spm between 100 and 260),
   weekly_availability text,
   injury_limitations text,
-  notes text
+  notes text,
+  metric_observed_at jsonb not null default '{}'::jsonb
 );
 
 create table if not exists public.athlete_hr_zones (

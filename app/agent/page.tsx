@@ -143,7 +143,7 @@ export default function AgentPage() {
           </div>
         </header>
 
-        <HiddenImageInput fileInputRef={fileInputRef} onFile={attachFile} />
+        <HiddenImageInput fileInputRef={fileInputRef} onFiles={(files) => { for (const file of files) void attachFile(file); }} />
 
         <div className="messages" aria-live="polite">
           {messages.length === 0 ? (

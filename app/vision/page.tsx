@@ -102,7 +102,7 @@ export default function VisionPage() {
           </button>
         )}
 
-        <HiddenImageInput fileInputRef={fileInputRef} onFile={attachFile} />
+        <HiddenImageInput fileInputRef={fileInputRef} onFiles={(files) => { for (const file of files) void attachFile(file); }} />
 
         <div className="messages" aria-live="polite">
           {messages.map((message: UIMessage) => (

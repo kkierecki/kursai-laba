@@ -23,6 +23,7 @@ import {
 } from "../../../lib/user-profile";
 import {
   getRunnerContext,
+  saveAthleteProfile,
   saveAthleteLocation,
   saveRecoveryLog,
   saveRunningGoal,
@@ -98,7 +99,9 @@ const toolUsageRules = `## TOOL USAGE RULES
 - When the user gives a durable preference, call saveUserPreference before answering.
 - When the user says where they live or usually train, call saveAthleteLocation before answering. Use that location to assess terrain and, when relevant, fetch weather before proposing an outdoor workout.
 - When the user gives a stable running-profile value, call saveUserPreference before answering. Use clear keys such as age, weight_kg, sex, hr_max, lactate_threshold_hr, vo2max, heart_rate_zones, cadence_spm, sleep_hours, weekly_availability, running_goal, goal_date, injury_limitations.
-- Treat image attachments as training screenshots unless the user says otherwise. Extract only values you can see clearly, state uncertainty, and never invent missing metrics.
+- For HRmax, VO₂max, cadence, threshold, body metrics, availability or limitations, also call saveAthleteProfile. For an explicitly stated goal call saveRunningGoal; for a completed workout call saveWorkout; for sleep or readiness call saveRecoveryLog. Do this after analyzing a screenshot whenever the value is clearly visible.
+- If a newly read profile value differs from the saved value, never overwrite it silently. Only send observedOn when the screenshot/source itself shows an objective date. The save tool will update automatically only if that date is later than the saved observation date; otherwise ask the user whether to update and retry only after an explicit confirmation.
+- Treat image attachments as training screenshots unless the user says otherwise. When several screenshots are attached, read and compare every one before answering. Extract only values you can see clearly, state uncertainty, and never invent missing metrics.
 - Do not claim that a workout, goal, or recovery entry was saved unless the corresponding save tool confirmed it.
 - Before the final answer, check that every part of the user's request was completed. If a tool fails, try a sensible alternative and explain the limitation only at the end.`;
 
@@ -335,6 +338,21 @@ function createChatTools(userId: string | null) {
           return await saveAthleteLocation(userId, homeLocation);
         } catch {
           return { saved: false, error: "Nie udało się zapisać lokalizacji." };
+        }
+      },
+    }),
+    saveAthleteProfile: tool({
+      description: "Zapisuje trwałe, ustrukturyzowane parametry biegacza (HRmax, VO2max, kadencję, próg, masę itd.). Przy wartości innej niż zapisana podaj observedOn WYŁĄCZNIE gdy jest jednoznaczna data na screenie/źródle; bez niej najpierw pytaj o zgodę. Ustaw confirmed=true tylko po wyraźnym potwierdzeniu użytkownika.",
+      inputSchema: jsonSchema<{ birthYear?: number; sex?: "female" | "male" | "nonbinary" | "undisclosed"; weightKg?: number; heightCm?: number; hrMax?: number; lactateThresholdHr?: number; lactateThresholdPaceSeconds?: number; vo2max?: number; typicalCadenceSpm?: number; weeklyAvailability?: string; injuryLimitations?: string; notes?: string; observedOn?: string; confirmed?: boolean }>({
+        type: "object",
+        properties: { birthYear: { type: "number" }, sex: { type: "string" }, weightKg: { type: "number" }, heightCm: { type: "number" }, hrMax: { type: "number" }, lactateThresholdHr: { type: "number" }, lactateThresholdPaceSeconds: { type: "number" }, vo2max: { type: "number" }, typicalCadenceSpm: { type: "number" }, weeklyAvailability: { type: "string" }, injuryLimitations: { type: "string" }, notes: { type: "string" }, observedOn: { type: "string", description: "Obiektywna data YYYY-MM-DD widoczna w źródle, nigdy data czatu ani pliku." }, confirmed: { type: "boolean" } },
+        additionalProperties: false,
+      }),
+      execute: async (input) => {
+        try {
+          return await saveAthleteProfile(userId, input);
+        } catch {
+          return { saved: false, error: "Nie udało się zapisać profilu biegacza." };
         }
       },
     }),
@@ -647,11 +665,12 @@ function createModelResponse({
   return result.toUIMessageStreamResponse({ sendSources: true });
 }
 
-function attachImageToLastUserMessage(
+function attachImagesToLastUserMessage(
   messages: UIMessage[],
-  image: RequestImage | undefined,
+  images: RequestImage[] | undefined,
 ) {
-  if (!image?.dataUrl || !image.mediaType) {
+  const validImages = (images ?? []).filter((image) => image?.dataUrl && image.mediaType).slice(0, 5);
+  if (validImages.length === 0) {
     return messages;
   }
 
@@ -665,12 +684,12 @@ function attachImageToLastUserMessage(
   }
 
   lastUserMessage.parts = [
-    {
-      type: "file",
+    ...validImages.map((image) => ({
+      type: "file" as const,
       mediaType: image.mediaType,
       filename: image.filename || "attached-image",
       url: image.dataUrl,
-    },
+    })),
     ...lastUserMessage.parts,
   ];
 
@@ -888,12 +907,14 @@ export async function POST(req: Request) {
   try {
     const {
       image,
+      images,
       messages,
       mode,
       model,
       userId: _rawUserId,
     }: {
       image?: RequestImage;
+      images?: RequestImage[];
       messages: UIMessage[];
       mode?: unknown;
       model?: unknown;
@@ -922,7 +943,7 @@ export async function POST(req: Request) {
       }
     }
 
-    const requestMessages = attachImageToLastUserMessage(messages, image);
+    const requestMessages = attachImagesToLastUserMessage(messages, images ?? (image ? [image] : []));
     const lastUserText = getLastUserText(requestMessages);
     const baseSystem = isBusinessCommand(lastUserText)
       ? `${systemPrompts[selectedMode]}\n\n${businessCommandPrompt}`
@@ -954,7 +975,7 @@ export async function POST(req: Request) {
     void requestLog.finish(200, {
       model: selectedModel,
       mode: selectedMode,
-      imageAttached: Boolean(image),
+      imageAttached: images?.length ?? (image ? 1 : 0),
       messageSummary: summarizeMessages(requestMessages),
     });
 

@@ -16,6 +16,7 @@ const acceptedTypes = new Set([
   "image/webp",
 ]);
 const maxImageSize = 4 * 1024 * 1024;
+const maxImages = 5;
 
 function fileToDataUrl(file: File) {
   return new Promise<string>((resolve, reject) => {
@@ -28,7 +29,7 @@ function fileToDataUrl(file: File) {
 }
 
 export function useImageAttachment() {
-  const [attachedImage, setAttachedImage] = useState<AttachedImage | null>(null);
+  const [attachedImages, setAttachedImages] = useState<AttachedImage[]>([]);
   const [imageError, setImageError] = useState("");
   const [isDraggingImage, setIsDraggingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -48,25 +49,35 @@ export function useImageAttachment() {
       return;
     }
 
-    setImageError("");
-    setAttachedImage({
+    if (attachedImages.length >= maxImages) {
+      setImageError(`Możesz dodać maksymalnie ${maxImages} screenów naraz.`);
+      return;
+    }
+
+    const image = {
       dataUrl: await fileToDataUrl(file),
       mediaType: file.type,
       filename: file.name || "screenshot",
-    });
+    };
+    setImageError("");
+    setAttachedImages((current) => [...current, image]);
+  }
+
+  async function attachFiles(files: Iterable<File>) {
+    for (const file of Array.from(files)) {
+      await attachFile(file);
+    }
   }
 
   function handlePaste(event: React.ClipboardEvent) {
-    const imageItem = Array.from(event.clipboardData.items).find((item) =>
-      item.type.startsWith("image/"),
-    );
+    const imageItems = Array.from(event.clipboardData.items).filter((item) => item.type.startsWith("image/"));
 
-    if (!imageItem) {
+    if (imageItems.length === 0) {
       return;
     }
 
     event.preventDefault();
-    void attachFile(imageItem.getAsFile());
+    void attachFiles(imageItems.map((item) => item.getAsFile()).filter((file): file is File => Boolean(file)));
   }
 
   function handleDragOver(event: React.DragEvent) {
@@ -85,13 +96,16 @@ export function useImageAttachment() {
   function handleDrop(event: React.DragEvent) {
     event.preventDefault();
     setIsDraggingImage(false);
-    void attachFile(Array.from(event.dataTransfer.files)[0]);
+    void attachFiles(Array.from(event.dataTransfer.files));
   }
 
   return {
-    attachedImage,
+    attachedImage: attachedImages[0] ?? null,
+    attachedImages,
     attachFile,
-    clearAttachedImage: () => setAttachedImage(null),
+    attachFiles,
+    clearAttachedImage: () => setAttachedImages([]),
+    removeImage: (index: number) => setAttachedImages((current) => current.filter((_, currentIndex) => currentIndex !== index)),
     fileInputRef,
     handleDragLeave,
     handleDragOver,
@@ -105,21 +119,22 @@ export function useImageAttachment() {
 
 export function HiddenImageInput({
   fileInputRef,
-  onFile,
+  onFiles,
 }: {
   fileInputRef: RefObject<HTMLInputElement | null>;
-  onFile: (file: File | null | undefined) => void;
+  onFiles: (files: Iterable<File>) => void;
 }) {
   return (
     <input
       accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
       hidden
       onChange={(event) => {
-        onFile(event.target.files?.[0]);
+        onFiles(Array.from(event.target.files ?? []));
         event.target.value = "";
       }}
       ref={fileInputRef}
       type="file"
+      multiple
     />
   );
 }
