@@ -37,3 +37,9 @@ Przykład:
 ```
 
 Agent nie zgaduje danych niewidocznych na screenie, nie zaleca biegania przez ból i kieruje do specjalisty przy sygnałach zdrowotnych wymagających konsultacji.
+
+## `/uzupelnij-profil`
+
+Przegląda zapisaną historię rozmów i przenosi do profilu, celów, treningów oraz regeneracji tylko dane jednoznacznie podane przez użytkownika lub wyraźnie odczytane wcześniej ze screena.
+
+Nie odtwarza samych plików graficznych, nie używa daty wiadomości jako daty treningu i pyta o zgodę przed nadpisaniem konfliktowej metryki.

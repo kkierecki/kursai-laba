@@ -86,6 +86,25 @@ export async function getRunnerContext(userId: string) {
   };
 }
 
+export async function getHistoricalTrainingMemory(userId: string) {
+  const { data, error } = await supabase
+    .from("messages")
+    .select("created_at,role,content,conversations!inner(user_id)")
+    .eq("conversations.user_id", userId)
+    .in("role", ["user", "assistant"])
+    .order("created_at", { ascending: false })
+    .limit(100);
+  if (error) throw error;
+
+  return (data ?? [])
+    .reverse()
+    .map((message) => ({
+      createdAt: message.created_at,
+      role: message.role,
+      content: message.content.slice(0, 3000),
+    }));
+}
+
 export async function saveRunningGoal(userId: string, input: RunningGoalInput) {
   const { data, error } = await supabase.from("running_goals").insert(compact({
     user_id: userId,

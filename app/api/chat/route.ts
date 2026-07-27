@@ -23,6 +23,7 @@ import {
 } from "../../../lib/user-profile";
 import {
   getRunnerContext,
+  getHistoricalTrainingMemory,
   saveAthleteProfile,
   saveAthleteLocation,
   saveRecoveryLog,
@@ -94,7 +95,7 @@ const toolUsageRules = `## TOOL USAGE RULES
 - For a weather question, use ONLY getWeather with the requested city. Do not call currentDateTime, searchKnowledge, google_search, or readWebPage for the same weather question.
 - After getWeather returns, write the final answer immediately. Do not call another tool unless the user explicitly asked for another independent task.
 - After finding useful results, use readWebPage to verify official pages and details.
-- For an image, sketch, drawing, illustration, or visualization, always use generateImage. Do not claim that image generation is unavailable when the tool is available.
+- When the user explicitly asks to generate an image, sketch, drawing, illustration, or visualization, use generateImage. Never use generateImage merely because the user attached a screenshot.
 - When the user gives their name, call saveUserName before answering.
 - When the user gives a durable preference, call saveUserPreference before answering.
 - When the user says where they live or usually train, call saveAthleteLocation before answering. Use that location to assess terrain and, when relevant, fetch weather before proposing an outdoor workout.
@@ -102,6 +103,7 @@ const toolUsageRules = `## TOOL USAGE RULES
 - For HRmax, VO₂max, cadence, threshold, body metrics, availability or limitations, also call saveAthleteProfile. For an explicitly stated goal call saveRunningGoal; for a completed workout call saveWorkout; for sleep or readiness call saveRecoveryLog. Do this after analyzing a screenshot whenever the value is clearly visible.
 - If a newly read profile value differs from the saved value, never overwrite it silently. Only send observedOn when the screenshot/source itself shows an objective date. The save tool will update automatically only if that date is later than the saved observation date; otherwise ask the user whether to update and retry only after an explicit confirmation.
 - Treat image attachments as training screenshots unless the user says otherwise. When several screenshots are attached, read and compare every one before answering. Extract only values you can see clearly, state uncertainty, and never invent missing metrics.
+- For every attached training screenshot, before the final answer you MUST persist all clearly visible data: use saveAthleteProfile for profile metrics, saveWorkout for a completed activity with an objectively visible date, saveRecoveryLog for recovery data, and saveRunningGoal for an explicitly stated goal. If a required date or a conflicting value prevents saving, explain exactly what is missing or ask for confirmation. Report which records were saved.
 - Do not claim that a workout, goal, or recovery entry was saved unless the corresponding save tool confirmed it.
 - Before the final answer, check that every part of the user's request was completed. If a tool fails, try a sensible alternative and explain the limitation only at the end.`;
 
@@ -442,8 +444,24 @@ Nie udało się odczytać bazy treningowej. Nie zakładaj żadnych wartości i p
   }
 }
 
+function isProfileBackfillCommand(text: string) {
+  return text.trim().toLowerCase().startsWith("/uzupelnij-profil");
+}
+
+async function createHistoricalBackfillPrompt(userId: string) {
+  try {
+    const history = await getHistoricalTrainingMemory(userId);
+    return `## HISTORIA DO UZUPEŁNIENIA PROFILU
+Użytkownik wywołał /uzupelnij-profil. Przejrzyj poniższą historię i zapisz przez narzędzia tylko dane jednoznacznie podane przez użytkownika albo wyraźnie oznaczone w odpowiedzi asystenta jako odczytane ze screena.
+Nie traktuj daty wiadomości jako daty treningu ani daty pomiaru. Nie zapisuj przypuszczeń, rekomendacji ani wartości przykładowych. Jeśli wartość koliduje z profilem, respektuj mechanizm potwierdzenia narzędzia. Na końcu podaj listę zapisanych rekordów i danych, których nie udało się zapisać.
+${JSON.stringify(history)}`;
+  } catch {
+    return "## HISTORIA DO UZUPEŁNIENIA PROFILU\nNie udało się odczytać historii. Poinformuj użytkownika i zaproponuj ponowne przesłanie danych.";
+  }
+}
+
 const businessCommandPrompt = `## KOMENDY TRENERA BIEGANIA
-Jeśli ostatnia wiadomość zaczyna się od /trening albo /podsumowanie, zwróć wyłącznie gotowy materiał w formacie tej komendy, bez wstępu i bez końcowego pytania.
+Jeśli ostatnia wiadomość zaczyna się od /trening, /podsumowanie albo /uzupelnij-profil, zwróć wyłącznie gotowy materiał w formacie tej komendy, bez wstępu i bez końcowego pytania.
 
 ## /trening
 Służy do zapisania i krótkiej analizy wykonanego biegu. Jeśli użytkownik podaje dane ze screena, odczytaj tylko informacje pewne; brakujące oznacz jako „brak danych”.
@@ -452,6 +470,10 @@ Format: ## Trening, ## Dane, ## Ocena intensywności, ## Regeneracja, ## Następ
 ## /podsumowanie
 Służy do podsumowania tygodnia lub okresu treningowego.
 Format: ## Okres, ## Obciążenie, ## Co działa, ## Ryzyka, ## Plan na kolejny tydzień.
+
+## /uzupelnij-profil
+Odczytuje historyczną korespondencję i zapisuje tylko pewne dane biegacza.
+Format: ## Zapisane dane, ## Zapisane treningi, ## Konflikty wymagające potwierdzenia, ## Brakujące dane.
 
 Zasady: nie wymyślaj pomiarów, nie zalecaj biegania przez ból ani „odrabiania” opuszczonych treningów. Przy braku danych o HRmax, progu lub ostatnich treningach poproś o nie poza formatem komendy.`;
 
@@ -482,7 +504,7 @@ function getLastUserText(messages: UIMessage[]) {
 function isBusinessCommand(text: string) {
   const normalized = text.trim().toLowerCase();
 
-  return normalized.startsWith("/trening") || normalized.startsWith("/podsumowanie");
+  return normalized.startsWith("/trening") || normalized.startsWith("/podsumowanie") || normalized.startsWith("/uzupelnij-profil");
 }
 
 function calculateExpression(expression: string) {
@@ -949,7 +971,10 @@ export async function POST(req: Request) {
       ? `${systemPrompts[selectedMode]}\n\n${businessCommandPrompt}`
       : systemPrompts[selectedMode];
     const trainingContext = await createTrainingContextPrompt(userId);
-    const system = `${baseSystem}\n\n${createPersonalizationPrompt(profile)}\n\n${trainingContext}`;
+    const historicalBackfill = isProfileBackfillCommand(lastUserText)
+      ? `\n\n${await createHistoricalBackfillPrompt(userId)}`
+      : "";
+    const system = `${baseSystem}\n\n${createPersonalizationPrompt(profile)}\n\n${trainingContext}${historicalBackfill}`;
     const modelMessages = await convertToModelMessages(requestMessages, {
       tools: requestTools,
     });

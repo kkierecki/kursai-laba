@@ -468,7 +468,7 @@ export function ChatHome() {
 
   async function sendText(text: string) {
     if (
-      !text ||
+      (!text && attachedImages.length === 0) ||
       isLoading ||
       isRestoring ||
       isProfileLoading ||
@@ -477,13 +477,14 @@ export function ChatHome() {
       return;
     }
 
+    const messageText = text || "Przeanalizuj wszystkie załączone screenshoty treningowe, zapisz jednoznacznie widoczne dane w moim profilu i historii treningów, a brakujące dane oznacz jako brak danych.";
     pendingModeRef.current = mode;
     pendingAiModelRef.current = aiModel;
     pendingImageRef.current = attachedImages;
     setInput("");
     clearAttachedImage();
-    void ensureConversation(text);
-    await sendMessage({ text });
+    void ensureConversation(messageText);
+    await sendMessage({ text: messageText });
     pendingImageRef.current = [];
   }
 
@@ -750,7 +751,7 @@ export function ChatHome() {
               isRestoring ||
               isProfileLoading ||
               isCreatingConversation ||
-              input.trim().length === 0
+              (input.trim().length === 0 && attachedImages.length === 0)
             }
             type="submit"
           >
