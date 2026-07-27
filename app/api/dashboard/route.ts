@@ -10,6 +10,7 @@ export const revalidate = 0;
 
 export async function GET(request: Request) {
   const section = new URL(request.url).searchParams.get("section") ?? "all";
+  const city = new URL(request.url).searchParams.get("city")?.trim() || "Warszawa";
   const year = new Date().getFullYear();
   const requestLog = beginTechnicalRequest(request, "/api/dashboard", {
     section,
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
     if (section === "weather") {
       const response = Response.json({
         currentDateTime: getCurrentDateTime(),
-        weather: await fetchWeather("Warszawa"),
+        weather: await fetchWeather(city),
       });
       void requestLog.finish(200);
       return response;

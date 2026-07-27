@@ -4,9 +4,9 @@ import { AppNavigation } from "./components/app-navigation";
 import { AuthGuard } from "./components/auth-guard";
 
 export const metadata: Metadata = {
-  title: "Centrum agenta AI",
+  title: "Trener Biegania AI",
   description:
-    "Profesjonalny agent AI od żeglugi tradycyjnej i pracy pokładowej.",
+    "Osobisty trener biegania AI: analiza treningów, celów i regeneracji.",
 };
 
 export default function RootLayout({

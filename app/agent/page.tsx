@@ -13,11 +13,11 @@ import {
 import { MessageContent } from "../components/message-content";
 
 const scenarios = [
-  "Użyj Google Search, znajdź oficjalne informacje o STS Pogoria i podaj najbliższy rejs oraz warunki uczestnictwa",
-  "Przeczytaj stronę https://stspogoria.pl i wypisz wymagania dla początkującej załogi",
-  "Użyj kalkulatora: oblicz zapas wody na 7 dni dla 8 osób po 2 litry dziennie oraz dodaj 20% rezerwy",
-  "Użyj Google Search, znajdź typ ożaglowania STS Pogoria, a następnie wygeneruj jego techniczny szkic",
-  "Porównaj z użyciem Google Search STS Pogoria i STS Kapitan Borchardt, korzystając z oficjalnych stron armatorów",
+  "Wyszukaj aktualne zalecenia dotyczące taperingu przed półmaratonem i podaj źródła.",
+  "Przeanalizuj screenshot z Garmin Connect i wypisz tempo, tętno, kadencję oraz obciążenie.",
+  "Użyj kalkulatora: policz tempo dla 10 km w 52 minuty oraz prognozę czasu na półmaraton.",
+  "Wyszukaj oficjalne informacje o najbliższym biegu na 10 km w Warszawie.",
+  "Porównaj trening progowy i interwały VO₂max dla celu: 10 km poniżej 50 minut.",
 ];
 
 const tools = [

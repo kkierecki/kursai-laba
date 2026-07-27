@@ -4,11 +4,11 @@ import { FormEvent, useState } from "react";
 
 const examples = [
   "Wygeneruj techniczny szkic trzymasztowego barku z opisanymi elementami takielunku",
-  "Wygeneruj rycinę STS Pogoria na spokojnym Bałtyku w stylu atlasu żeglarskiego",
-  "Wygeneruj plakat rejsu szkoleniowego dla początkującej załogi żaglowca w stylu marynistycznym",
-  "Wygeneruj ikonę kompasu i kotwicy dla dziennika pokładowego w stylu vintage",
-  "Wygeneruj infografikę: 5 kroków do bezpiecznej wachty na żaglowcu",
-  "Wygeneruj realistyczne ujęcie pokładu starego żaglowca o świcie, z mokrymi linami i żaglami",
+  "Wygeneruj minimalistyczny plakat motywacyjny dla biegacza długodystansowego",
+  "Wygeneruj infografikę: 5 zasad regeneracji po mocnym treningu biegowym",
+  "Wygeneruj ikonę buta biegowego i pulsometru w nowoczesnym stylu",
+  "Wygeneruj czytelną planszę stref tętna dla biegacza",
+  "Wygeneruj realistyczne zdjęcie biegacza na leśnej ścieżce o świcie",
 ];
 
 type GeneratedImage = {

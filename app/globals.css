@@ -1072,6 +1072,20 @@ button {
   animation: dashboard-card-in 450ms ease both;
 }
 
+.runner-dashboard { background: radial-gradient(circle at 80% 0%, rgba(217, 255, 76, .11), transparent 28%), #0a0f12; }
+.runner-hero { border-bottom: 1px solid rgba(217, 255, 76, .28); }
+.runner-hero p { color: #d9ff4c; }
+.runner-hero span { color: #aeb8bd; font-size: .92rem; }
+.runner-hero button { background: #d9ff4c; color: #172000; border-color: #d9ff4c; }
+.runner-dashboard .dashboard-card { border-color: #263238; background: linear-gradient(145deg, #121b20, #0d1317); }
+.runner-dashboard .dashboard-card:hover { border-color: #d9ff4c; }
+.goal-card { border-left: 4px solid #d9ff4c !important; }
+.goal-title { display: block; font-size: 1.15rem; line-height: 1.35; }
+.runner-metrics { grid-template-columns: repeat(3, 1fr); }
+.runner-metrics dd { color: #d9ff4c; font-size: 1.35rem; }
+.runner-dashboard .quick-actions a { border-color: #415058; background: #172329; }
+.runner-dashboard .quick-actions a:hover { border-color: #d9ff4c; color: #d9ff4c; }
+
 .dashboard-card:nth-child(2) { animation-delay: 70ms; }
 .dashboard-card:nth-child(3) { animation-delay: 140ms; }
 .dashboard-card:nth-child(4) { animation-delay: 210ms; }

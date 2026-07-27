@@ -46,7 +46,7 @@ export function AppNavigation() {
         ☰ Menu
       </button>
       <nav className={`app-nav ${open ? "open" : ""}`} aria-label="Główna nawigacja">
-        <div className="nav-brand">Centrum agenta</div>
+        <div className="nav-brand">Trener Biegania AI</div>
         {links.map((link) => {
           const active = link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
           return (

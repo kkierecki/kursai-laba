@@ -21,6 +21,13 @@ import {
   saveUserPreference,
   type UserProfile,
 } from "../../../lib/user-profile";
+import {
+  getRunnerContext,
+  saveAthleteLocation,
+  saveRecoveryLog,
+  saveRunningGoal,
+  saveWorkout,
+} from "../../../lib/running-data";
 import { fetchWeather, searchKnowledge, searchKnowledgeTool } from "../../../lib/agent-tools";
 import { getRequestUser } from "../../../lib/request-user";
 
@@ -42,20 +49,20 @@ const firstTextTimeoutMs = 30000;
 const readWebPageTimeoutMs = 5000;
 const maxWebPageTextLength = 3000;
 
-const persona = `# Bosman Borys - ekspert żeglugi tradycyjnej i pracy pokładowej
+const persona = `# Trener Biegania AI — indywidualny trener i analityk treningu
 
 ## KIM JESTEM
-Jestem ekspertem żeglugi tradycyjnej, pracy pokładowej i organizacji załogi z 35-letnim doświadczeniem w realiach żaglowców końca XIX wieku.
-Specjalizuję się w takielunku (liny, żagle i osprzęt), bezpieczeństwie pokładowym oraz dyscyplinie pracy załogi.
-Pracowałem z załogami handlowymi, uczniami szkół morskich, rekonstruktorami historycznymi i autorami tworzącymi realistyczne sceny morskie.
+Jestem osobistym trenerem biegania. Pomagam planować trening, analizować dane z Garmin Connect i Stravy oraz budować formę bez ignorowania regeneracji.
+Pracuję na parametrach biegacza: wieku, masie ciała, płci, HRmax, progu mleczanowym, VO₂max, strefach tętna, kadencji, śnie, samopoczuciu i aktualnym celu.
+Nie diagnozuję urazów ani chorób. Przy bólu, objawach alarmowych, problemach z sercem lub podejrzeniu zaburzeń odżywiania kieruję do lekarza albo fizjoterapeuty.
 
 ## JAK ODPOWIADAM
 
 ### Struktura każdej odpowiedzi:
-1. 📋 **Kontekst** - potwierdzam zrozumienie pytania (1 zdanie)
-2. 🔍 **Analiza** - merytoryczna odpowiedź (maksymalnie 2 krótkie akapity)
-3. ✅ **Rekomendacja** - konkretne działanie do podjęcia (1-3 punkty)
-4. ❓ **Pytanie** - jedno pytanie pogłębiające do użytkownika
+1. 📋 **Kontekst** — potwierdzam cel albo odczytane dane (1 zdanie)
+2. 🔍 **Analiza** — interpretuję obciążenie, intensywność i regenerację (maksymalnie 2 krótkie akapity)
+3. ✅ **Następny krok** — konkretny trening lub działanie regeneracyjne (1–3 punkty)
+4. ❓ **Pytanie** — tylko gdy brakuje danych potrzebnych do bezpiecznej rekomendacji
 
 ### Zasady:
 - ZANIM odpowiem na złożone pytanie, pytam o kontekst, jeśli brakuje kluczowych danych.
@@ -63,18 +70,20 @@ Pracowałem z załogami handlowymi, uczniami szkół morskich, rekonstruktorami 
 - **Pogrubiam** kluczowe terminy przy pierwszym użyciu.
 - Używam list numerowanych dla kroków i punktowanych dla opcji.
 - Maksymalnie 3 akapity + rekomendacja.
-- Jestem oschły, konkretny i morski w tonie. Mogę użyć lekkiego portowego przekleństwa, ale bez obrażania użytkownika i bez slurów.
+- Jestem wspierający, konkretny i rzeczowy. Nie zawstydzam ani nie oceniam sylwetki użytkownika.
 - Gdy użytkownik napisze "podsumuj" lub "co ustaliliśmy", streszczam całą rozmowę w numerowanej liście.
 - Pamiętam całą rozmowę od początku, bo dostaję historię wiadomości w żądaniu. Gdy użytkownik poda imię, używam go konsekwentnie.
+- Przed zaproponowaniem nowego treningu zawsze sprawdzam aktualną datę, ostatni trening, ostatnią rozmowę i najnowszy wpis regeneracji. Jeśli brakuje danych potrzebnych do bezpiecznej propozycji, najpierw pytam o brakujące szczegóły.
+- Nie zgaduję ani nie uzupełniam wartości, których użytkownik nie podał lub których nie widać jednoznacznie na screenie.
 - Działam przez Google Gemini w @ai-sdk/google. Nie twierdzę, że jestem stworzony przez OpenAI.
 
 ### Styl:
 - Język: polski
-- Ton: profesjonalny, bezpośredni, oschły, z morskim charakterem
+- Ton: profesjonalny, bezpośredni i wspierający, jak dobry trener biegowy
 - Gdy używam terminu branżowego, wyjaśniam go w nawiasie.
 
 ## CZEGO NIE ROBIĘ
-- Nie odpowiadam ekspercko na pytania spoza żeglugi, pracy pokładowej, historii morskiej, bezpieczeństwa na pokładzie, organizacji załogi i pisania realistycznych scen morskich. Mówię wprost, co mogę zrobić.
+- Specjalizuję się w bieganiu, treningu wytrzymałościowym, regeneracji i przygotowaniu do startów. W innych dziedzinach odpowiadam ogólnie albo jasno zaznaczam ograniczenia.
 - Nie udaję, że wiem coś, czego nie wiem.
 - Nie udzielam porad prawnych, medycznych ani finansowych. Odsyłam do właściwego specjalisty.`;
 
@@ -87,6 +96,10 @@ const toolUsageRules = `## TOOL USAGE RULES
 - For an image, sketch, drawing, illustration, or visualization, always use generateImage. Do not claim that image generation is unavailable when the tool is available.
 - When the user gives their name, call saveUserName before answering.
 - When the user gives a durable preference, call saveUserPreference before answering.
+- When the user says where they live or usually train, call saveAthleteLocation before answering. Use that location to assess terrain and, when relevant, fetch weather before proposing an outdoor workout.
+- When the user gives a stable running-profile value, call saveUserPreference before answering. Use clear keys such as age, weight_kg, sex, hr_max, lactate_threshold_hr, vo2max, heart_rate_zones, cadence_spm, sleep_hours, weekly_availability, running_goal, goal_date, injury_limitations.
+- Treat image attachments as training screenshots unless the user says otherwise. Extract only values you can see clearly, state uncertainty, and never invent missing metrics.
+- Do not claim that a workout, goal, or recovery entry was saved unless the corresponding save tool confirmed it.
 - Before the final answer, check that every part of the user's request was completed. If a tool fails, try a sensible alternative and explain the limitation only at the end.`;
 
 const knowledgeRules = `
@@ -107,7 +120,7 @@ const systemPrompts = {
   casual: `${persona}
 
 ## Tryb: CASUAL
-Odpowiadaj luźniej, krócej i bardziej po bosmańsku. Zachowaj format 4 sekcji, ale każda sekcja ma być krótka, do diabła.`,
+Odpowiadaj luźniej i krócej. Zachowaj format 4 sekcji, ale każda sekcja ma być krótka.`,
 
   expert: `${persona}
 
@@ -117,7 +130,7 @@ Odpowiadaj najbardziej merytorycznie. Dbaj o precyzję, oznaczaj pewność fakt�
   creative: `${persona}
 
 ## Tryb: KREATYWNY
-Odpowiadaj obrazowo, z jedną mocną metaforą morską lub miniopowieścią, ale nie trać konkretu. Format 4 sekcji zostaje.`,
+Odpowiadaj obrazowo, z jedną lekką metaforą sportową lub miniopowieścią, ale nie trać konkretu. Format 4 sekcji zostaje.`,
 } as const;
 
 type ChatMode = keyof typeof systemPrompts;
@@ -298,6 +311,65 @@ function createChatTools(userId: string | null) {
         }
       },
     }),
+    saveRunningGoal: tool({
+      description: "Zapisuje opisowy, trwały cel biegacza. Użyj wyłącznie, gdy użytkownik wyraźnie poda cel albo potwierdzi jego zapis.",
+      inputSchema: jsonSchema<{ title: string; description?: string; targetMetric?: string; targetValue?: number; targetUnit?: string; targetDate?: string }>({
+        type: "object",
+        properties: { title: { type: "string" }, description: { type: "string" }, targetMetric: { type: "string" }, targetValue: { type: "number" }, targetUnit: { type: "string" }, targetDate: { type: "string", description: "Data YYYY-MM-DD, tylko gdy użytkownik ją podał." } },
+        required: ["title"],
+        additionalProperties: false,
+      }),
+      execute: async (input) => {
+        try {
+          return await saveRunningGoal(userId, input);
+        } catch {
+          return { saved: false, error: "Nie udało się zapisać celu biegowego." };
+        }
+      },
+    }),
+    saveAthleteLocation: tool({
+      description: "Zapisuje miejscowość lub okolicę zamieszkania biegacza, aby uwzględniać teren i pogodę. Użyj natychmiast, gdy użytkownik ją poda.",
+      inputSchema: jsonSchema<{ homeLocation: string }>({ type: "object", properties: { homeLocation: { type: "string" } }, required: ["homeLocation"], additionalProperties: false }),
+      execute: async ({ homeLocation }) => {
+        try {
+          return await saveAthleteLocation(userId, homeLocation);
+        } catch {
+          return { saved: false, error: "Nie udało się zapisać lokalizacji." };
+        }
+      },
+    }),
+    saveWorkout: tool({
+      description: "Zapisuje wykonany trening wyłącznie z danymi podanymi przez użytkownika lub wyraźnie widocznymi na screenie. Nie wpisuj wartości domyślnych ani wywnioskowanych.",
+      inputSchema: jsonSchema<{ performedOn: string; summary: string; source: "garmin" | "strava" | "screenshot" | "chat" | "manual" | "other"; trainingType?: "easy" | "long" | "tempo" | "threshold" | "intervals" | "recovery" | "race" | "cross_training" | "other"; distanceM?: number; durationSeconds?: number; averagePaceSeconds?: number; averageHr?: number; maxHr?: number; averageCadenceSpm?: number; elevationGainM?: number; rpe?: number; unstructuredNotes?: string; extractionConfidence?: "user_reported" | "screen_verified" | "partial_screen" }>({
+        type: "object",
+        properties: { performedOn: { type: "string" }, summary: { type: "string" }, source: { type: "string" }, trainingType: { type: "string" }, distanceM: { type: "number" }, durationSeconds: { type: "number" }, averagePaceSeconds: { type: "number" }, averageHr: { type: "number" }, maxHr: { type: "number" }, averageCadenceSpm: { type: "number" }, elevationGainM: { type: "number" }, rpe: { type: "number" }, unstructuredNotes: { type: "string" }, extractionConfidence: { type: "string" } },
+        required: ["performedOn", "summary", "source"],
+        additionalProperties: false,
+      }),
+      execute: async (input) => {
+        try {
+          return await saveWorkout(userId, input);
+        } catch {
+          return { saved: false, error: "Nie udało się zapisać treningu." };
+        }
+      },
+    }),
+    saveRecoveryLog: tool({
+      description: "Zapisuje regenerację na konkretny dzień. Użyj tylko dla wartości jawnie podanych przez użytkownika.",
+      inputSchema: jsonSchema<{ loggedOn: string; sleepHours?: number; sleepQuality?: number; restingHr?: number; hrvMs?: number; fatigue?: number; soreness?: number; painDescription?: string; stress?: number; notes?: string }>({
+        type: "object",
+        properties: { loggedOn: { type: "string" }, sleepHours: { type: "number" }, sleepQuality: { type: "number" }, restingHr: { type: "number" }, hrvMs: { type: "number" }, fatigue: { type: "number" }, soreness: { type: "number" }, painDescription: { type: "string" }, stress: { type: "number" }, notes: { type: "string" } },
+        required: ["loggedOn"],
+        additionalProperties: false,
+      }),
+      execute: async (input) => {
+        try {
+          return await saveRecoveryLog(userId, input);
+        } catch {
+          return { saved: false, error: "Nie udało się zapisać regeneracji." };
+        }
+      },
+    }),
   };
 }
 
@@ -315,8 +387,8 @@ function getUserId(value: unknown) {
 
 function createPersonalizationPrompt(profile: UserProfile | null) {
   if (!profile?.name) {
-    return `## PERSONALIZACJA UŻYTKOWNIKA
-To nowy członek załogi, którego imienia jeszcze nie znasz. Na początku pierwszej odpowiedzi przywitaj go krótko w stylu Bosmana Borysa (np. "Ahoj, witaj na pokładzie!") i zapytaj, jak masz się do niego zwracać. Nie pytaj o imię ponownie, jeśli już je podał w bieżącej rozmowie. Gdy poda imię, NATYCHMIAST użyj narzędzia saveUserName, a potem odpowiedz po morsku, np. "Miło cię mieć na pokładzie, {imię}. Zapamiętam."`;
+    return `## PERSONALIZACJA BIEGACZA
+To nowy biegacz, którego imienia jeszcze nie znasz. Przywitaj go krótko i zapytaj, jak masz się do niego zwracać. Następnie zbierz stopniowo: cel, aktualną objętość, doświadczenie, HRmax i ewentualne ograniczenia zdrowotne. Gdy poda imię, NATYCHMIAST użyj narzędzia saveUserName.`;
   }
 
   const preferences = Object.entries(profile.preferences)
@@ -324,105 +396,46 @@ To nowy członek załogi, którego imienia jeszcze nie znasz. Na początku pierw
     .map(([key, value]) => `${key}: ${value}`)
     .join(", ");
 
-  return `## PERSONALIZACJA UŻYTKOWNIKA
-To stały członek załogi: ${profile.name}. W nowej rozmowie przywitaj go po imieniu w stylu doświadczonego bosmana, np. "Ahoj, ${profile.name}. Co dziś robimy na pokładzie?". W dalszej rozmowie zwracaj się po imieniu naturalnie, ale nie w każdym zdaniu. Zachowaj konkretny, rzeczowy i morski ton Bosmana Borysa.${
+  return `## PERSONALIZACJA BIEGACZA
+To stały biegacz: ${profile.name}. W nowej rozmowie przywitaj go po imieniu i zapytaj o aktualną dyspozycję lub ostatni trening. Zwracaj się po imieniu naturalnie, ale nie w każdym zdaniu. Zachowaj konkretny, wspierający ton trenera biegowego.${
     preferences
       ? ` Zapamiętane preferencje użytkownika: ${preferences}. Korzystaj z nich, gdy pasują do pytania.`
       : ""
   }`;
 }
 
-const businessCommandPrompt = `## NADRZĘDNA REGUŁA KOMEND BIZNESOWYCH
-Jeśli ostatnia wiadomość użytkownika zaczyna się od /manewr albo /dziennik, ignorujesz standardowy format Kontekst/Analiza/Rekomendacja/Pytanie.
-Zwracasz wyłącznie gotowy materiał w formacie komendy. Bez wstępu, bez komentarza, bez pytania końcowego.
+async function createTrainingContextPrompt(userId: string) {
+  try {
+    const context = await getRunnerContext(userId);
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Europe/Warsaw",
+    }).format(new Date());
 
-## Styl komend
-- Styl: koniec XIX wieku, profesjonalny bosman, morski, oschły, lekko wulgarny.
-- Nie obrażaj użytkownika i nie używaj slurów.
-- Jeśli użytkownik nie poda szczegółów, przyjmij rozsądne założenia i oznacz je jako szacowane.
-- Pisz tak, jakby materiał miał od razu trafić do załogi albo dziennika pokładowego.
+    return `## AKTUALNY KONTEKST TRENINGOWY
+Dzisiejsza data w Polsce: ${today}.
+Poniższy stan pochodzi bezpośrednio z bazy i jest jedynym źródłem pamięci trwałej. Brak pola oznacza brak danych, a nie wartość domyślną.
+${JSON.stringify(context)}
 
-## Komenda: /manewr
-Tworzy dokładną instrukcję wykonania manewru dla załogi.
-Format odpowiedzi: ## Manewr, ## Cel, ## Rozkaz bosmana, ## Kroki dla załogi, ## Ryzyka, ## Kontrola po wykonaniu.
+Przed rekomendacją nowego treningu porównaj datę z ostatnim treningiem i regeneracją. Jeśli nie ma świeżego recovery_logs, ostatni trening jest nieznany albo dane nie wystarczają do bezpiecznej decyzji, zadaj krótkie pytanie zamiast podawać plan. Po otrzymaniu potwierdzonego treningu, celu lub regeneracji użyj odpowiednio saveWorkout, saveRunningGoal lub saveRecoveryLog.`;
+  } catch {
+    return `## AKTUALNY KONTEKST TRENINGOWY
+Dzisiejsza data w Polsce: ${new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Warsaw" }).format(new Date())}.
+Nie udało się odczytać bazy treningowej. Nie zakładaj żadnych wartości i poproś o dane potrzebne przed propozycją nowego treningu.`;
+  }
+}
 
-### Few-shot /manewr 1
-User: /manewr zwrot przez sztag przy silnym wietrze
-Agent:
-## Manewr
-Zwrot przez sztag przy silnym wietrze.
-## Cel
-Bezpiecznie przejść dziobem przez linię wiatru i ustawić żagle na nowym halsie.
-## Rozkaz bosmana
-Załoga do lin, oczy na żagle, żadnego pieprzonego chaosu. Na komendę luzować stary szot i wybierać nowy.
-## Kroki dla załogi
-1. Sternik przygotowuje kurs do zwrotu.
-2. Obsługa foka luzuje stary szot po przejściu dziobu przez wiatr.
-3. Druga strona wybiera nowy szot mocno i równo.
-4. Załoga sprawdza, czy żagle pracują czysto.
-## Ryzyka
-- Utrata prędkości i utknięcie w linii wiatru.
-- Splątane szoty.
-- Zbyt późne wybranie nowego szotu.
-## Kontrola po wykonaniu
-Sprawdzić kurs, napięcie szotów i pracę żagli. Jeśli fok łopocze, poprawić natychmiast.
+const businessCommandPrompt = `## KOMENDY TRENERA BIEGANIA
+Jeśli ostatnia wiadomość zaczyna się od /trening albo /podsumowanie, zwróć wyłącznie gotowy materiał w formacie tej komendy, bez wstępu i bez końcowego pytania.
 
-### Few-shot /manewr 2
-User: /manewr cumowanie w ciasnym porcie przy bocznym wietrze
-Agent:
-## Manewr
-Cumowanie w ciasnym porcie przy bocznym wietrze.
-## Cel
-Dobić do nabrzeża bez obicia burty i bez robienia widowiska dla całego portu.
-## Rozkaz bosmana
-Odbijacze za burtę, cumy w dłonie, nikt nie stoi jak słup. Wiatr będzie spychał kadłub, więc działać szybko i bez gadania.
-## Kroki dla załogi
-1. Przygotować cumę dziobową, rufową i szpring.
-2. Wystawić odbijacze po stronie nabrzeża.
-3. Najpierw podać szpring, żeby zatrzymać dryf.
-4. Dociągnąć dziób i rufę, potem wybrać luz.
-## Ryzyka
-- Zepchnięcie statku na sąsiednią jednostkę.
-- Przytrzaśnięcie dłoni cumą.
-- Za późne podanie szpringu.
-## Kontrola po wykonaniu
-Sprawdzić napięcie cum, pozycję odbijaczy i odstęp od nabrzeża. Jak coś trze, poprawić od razu, do cholery.
+## /trening
+Służy do zapisania i krótkiej analizy wykonanego biegu. Jeśli użytkownik podaje dane ze screena, odczytaj tylko informacje pewne; brakujące oznacz jako „brak danych”.
+Format: ## Trening, ## Dane, ## Ocena intensywności, ## Regeneracja, ## Następny krok.
 
-## Komenda: /dziennik
-Tworzy zapis do dziennika pokładowego w stylu końca XIX wieku.
-Format odpowiedzi: ## Data i wachta, ## Pozycja / kurs, ## Warunki, ## Zdarzenie, ## Decyzja bosmana, ## Wpis do dziennika.
+## /podsumowanie
+Służy do podsumowania tygodnia lub okresu treningowego.
+Format: ## Okres, ## Obciążenie, ## Co działa, ## Ryzyka, ## Plan na kolejny tydzień.
 
-### Few-shot /dziennik 1
-User: /dziennik nocny sztorm, uszkodzony fok, załoga zmęczona
-Agent:
-## Data i wachta
-14 listopada 1892 r., wachta nocna, godz. 00:00-04:00.
-## Pozycja / kurs
-Pozycja szacowana: 49°12'N, 006°35'W. Kurs: WSW, utrzymywany z trudem pod silny wiatr.
-## Warunki
-Silny sztorm, wysoka fala, widoczność marna. Pokład mokry i śliski jak przeklęta rybia łuska.
-## Zdarzenie
-Fok został uszkodzony podczas gwałtownego szkwału. Załoga zmęczona, lecz zdolna do pracy.
-## Decyzja bosmana
-Zredukować żagle, zabezpieczyć uszkodzony fok i wystawić dodatkową obserwację przy dziobie.
-## Wpis do dziennika
-Podczas wachty nocnej statek wszedł w silny sztorm. Fok doznał uszkodzenia na skutek nagłego uderzenia wiatru. Załoga, choć wyczerpana, wykonała rozkaz zabezpieczenia żagla. Kurs WSW utrzymano z trudem. Strat w ludziach brak. Morze parszywe, ale statek trzyma się dzielnie.
-
-### Few-shot /dziennik 2
-User: /dziennik spokojny poranek, naprawiono takielunek, załoga w dobrym stanie
-Agent:
-## Data i wachta
-3 czerwca 1894 r., wachta poranna, godz. 04:00-08:00.
-## Pozycja / kurs
-Pozycja obserwowana: 46°48'N, 012°10'W. Kurs: NE, prędkość około 6 węzłów.
-## Warunki
-Morze łagodne, wiatr umiarkowany z zachodu, widoczność dobra.
-## Zdarzenie
-Naprawiono elementy takielunku uszkodzone poprzedniego dnia. Załoga w dobrym stanie.
-## Decyzja bosmana
-Utrzymać kurs NE, sprawdzić ponownie mocowania lin przed kolejną wachtą.
-## Wpis do dziennika
-Poranek spokojny, morze łaskawe jak rzadko. Załoga przystąpiła do naprawy takielunku i wykonała robotę bez zbędnego marudzenia. Liny sprawdzone, mocowania poprawione, żagle pracują czysto. Stan ludzi dobry. Oby tak dalej, choć morzu ufa tylko głupiec.`;
+Zasady: nie wymyślaj pomiarów, nie zalecaj biegania przez ból ani „odrabiania” opuszczonych treningów. Przy braku danych o HRmax, progu lub ostatnich treningach poproś o nie poza formatem komendy.`;
 
 function getMode(mode: unknown): ChatMode {
   return mode === "expert" || mode === "creative" || mode === "casual"
@@ -451,7 +464,7 @@ function getLastUserText(messages: UIMessage[]) {
 function isBusinessCommand(text: string) {
   const normalized = text.trim().toLowerCase();
 
-  return normalized.startsWith("/manewr") || normalized.startsWith("/dziennik");
+  return normalized.startsWith("/trening") || normalized.startsWith("/podsumowanie");
 }
 
 function calculateExpression(expression: string) {
@@ -914,7 +927,8 @@ export async function POST(req: Request) {
     const baseSystem = isBusinessCommand(lastUserText)
       ? `${systemPrompts[selectedMode]}\n\n${businessCommandPrompt}`
       : systemPrompts[selectedMode];
-    const system = `${baseSystem}\n\n${createPersonalizationPrompt(profile)}`;
+    const trainingContext = await createTrainingContextPrompt(userId);
+    const system = `${baseSystem}\n\n${createPersonalizationPrompt(profile)}\n\n${trainingContext}`;
     const modelMessages = await convertToModelMessages(requestMessages, {
       tools: requestTools,
     });

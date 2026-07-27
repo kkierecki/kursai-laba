@@ -7,11 +7,11 @@ import { ReactMessageContent } from "../components/react-message-content";
 import { DiagnosticsPanel } from "../components/diagnostics-panel";
 
 const scenarios = [
-  "Użyj getWeather dla Gdyni, searchWikipedia dla portu i getHolidays dla Polski: przygotuj plan weekendowej wachty.",
-  "Użyj getExchangeRate dla EUR i USD, calculator, saveNote oraz getNotes: rozlicz 5000 EUR na prowiant i zapisz podsumowanie bosmana.",
-  "Użyj getWeather dla Gdyni, Szczecina i Helu. Wskaż port z najlepszymi warunkami do wyjścia w morze.",
-  "Użyj currentDateTime i getHolidays: oblicz, ile dni zostało do najbliższego święta i zaplanuj obsadę wachty portowej.",
-  "Użyj readWebPage, przeczytaj https://stspogoria.pl i wypisz trzy najważniejsze zasady dla początkującej załogi.",
+  "Użyj getWeather dla Warszawy i zaproponuj bezpieczne dostosowanie treningu do warunków.",
+  "Użyj calculator, saveNote oraz getNotes: oblicz tempo dla półmaratonu w 1:50 i zapisz plan tempa.",
+  "Użyj getWeather dla Warszawy, Krakowa i Gdańska. Wskaż miasto z najlepszymi warunkami na długi bieg.",
+  "Użyj currentDateTime i getHolidays: oblicz, ile dni zostało do startu 11 listopada i rozplanuj tapering.",
+  "Użyj readWebPage i wypisz trzy najważniejsze zasady organizatora wskazanego biegu.",
   "Użyj searchKnowledge: ile kosztuje pakiet Premium i jakie obejmuje warunki? Podaj źródło.",
 ];
 

@@ -5,11 +5,11 @@ import { DefaultChatTransport, type UIMessage } from "ai";
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 const exampleCommands = [
-  "/tabela typy ożaglowania na żaglowcach",
+  "/tabela strefy tętna dla biegacza",
   "/porownanie STS Pogoria vs STS Kapitan Borchardt",
-  "/lista 5 zasad bezpiecznej wachty na żaglowcu",
+  "/lista 5 zasad bezpiecznego zwiększania kilometrażu",
   "/faq praca przy takielunku dla początkującej załogi",
-  "/email prośba o miejsce na rejsie szkoleniowym",
+  "/email prośba o zmianę pakietu startowego w biegu",
 ];
 
 function getMessageText(message: UIMessage) {

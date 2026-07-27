@@ -37,10 +37,10 @@ const aiModels: Array<{
 ];
 
 const exampleQuestions = [
-  "/manewr zwrot przez sztag przy silnym wietrze",
-  "/dziennik nocny sztorm, uszkodzony fok, załoga zmęczona",
-  "Użyj aktualnej daty i przygotuj plan nocnej wachty na dzisiejszą noc.",
-  "Wyszukaj w Google oficjalne informacje o STS Pogoria i podaj źródła dotyczące rejsów.",
+  "/trening 8 km spokojnie, średnie tętno 142, tempo 5:45/km",
+  "/podsumowanie tygodnia: 3 treningi, 24 km, jeden interwał",
+  "Ułóż mi następny trening po dzisiejszym biegu progowym.",
+  "Przeanalizuj screenshot z Garmin Connect i wskaż, co poprawić.",
 ];
 
 function getMessageText(message: UIMessage) {
@@ -547,10 +547,9 @@ export function ChatHome() {
       <DropOverlay visible={isDraggingImage} />
       <section className="chat-panel" aria-label="Czat z agentem AI">
         <header className="chat-header">
-          <h1>Bosman Borys — ekspert żeglugi ⚓</h1>
+          <h1>Trener Biegania AI 🏃</h1>
           <p>
-            Ekspert od żeglugi tradycyjnej, pracy pokładowej i realiów
-            żaglowców końca XIX wieku.
+            Twój indywidualny trener: planuje trening, analizuje dane i pilnuje regeneracji.
           </p>
           <div className="example-questions" aria-label="Przykładowe pytania">
             {exampleQuestions.map((question) => (
@@ -616,7 +615,7 @@ export function ChatHome() {
         <div className="messages" aria-live="polite">
           {messages.length === 0 ? (
             <p className="empty-state">
-              Rzuć pytanie na pokład, a bosman odpowie po swojemu.
+              Opowiedz o swoim bieganiu albo dodaj screenshot treningu.
             </p>
           ) : (
             messages.map((message) => {

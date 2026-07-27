@@ -13,11 +13,11 @@ import {
 import { MessageContent } from "../components/message-content";
 
 const visionQuestions = [
-  "Przeanalizuj załączony obraz żaglowca: wskaż maszty, reje i żagle.",
-  "Przeanalizuj załączony plan pokładu i wyciągnij cały widoczny tekst.",
-  "Opisz załączoną scenę w 3 zdaniach jak wpis do dziennika bosmana.",
-  "Na podstawie załączonego obrazu wskaż elementy takielunku oraz podaj ich funkcje.",
-  "Na podstawie załączonego obrazu wygeneruj techniczny szkic tego żaglowca.",
+  "Przeanalizuj screenshot z Garmin Connect: dystans, tempo, tętno i kadencję.",
+  "Wyciągnij wszystkie widoczne parametry treningu ze screena ze Stravy.",
+  "Oceń, czy tempo i tętno wskazują na trening łatwy, progowy czy interwałowy.",
+  "Wskaż niepokojące sygnały: zbyt wysokie tętno, spadek kadencji lub brak regeneracji.",
+  "Porównaj ten trening z moim celem i zaproponuj kolejny krok.",
 ];
 
 export default function VisionPage() {

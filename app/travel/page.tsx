@@ -7,11 +7,11 @@ import { TravelMessageContent } from "../components/travel-message-content";
 import { DiagnosticsPanel } from "../components/diagnostics-panel";
 
 const scenarios = [
-  "Zaplanuj 3-dniowy rejs szkoleniowy z Gdyni do Kopenhagi. Budżet: 2000 PLN. Sprawdź pogodę, kurs DKK, święta, Wikipedię i użyj kalkulatora.",
-  "Zaplanuj tygodniowy rejs żaglowcem ze Szczecina do Londynu w sierpniu. Uwzględnij pogodę, kurs GBP, święta, atrakcje portowe i budżet.",
-  "Przygotuj plan zaokrętowania w Szczecinie i rejsu do Amsterdamu. Sprawdź pogodę, kurs EUR, święta, informacje o mieście i koszty.",
-  "Zaplanuj rejs do Londynu w przyszłym tygodniu dla początkującej załogi. Zbierz dane pogodowe, walutowe, świąteczne i przygotuj checklistę.",
-  "Porównaj Barcelonę i Lizbonę jako bazę tygodniowego rejsu szkoleniowego, korzystając z pogody, kursu EUR, świąt, Wikipedii i kalkulatora.",
+  "Zaplanuj wyjazd na półmaraton do Kopenhagi. Budżet: 2000 PLN. Sprawdź pogodę, kurs DKK, święta i użyj kalkulatora.",
+  "Zaplanuj wyjazd na maraton do Londynu w sierpniu. Uwzględnij pogodę, kurs GBP, święta i budżet.",
+  "Przygotuj plan wyjazdu na bieg do Amsterdamu. Sprawdź pogodę, kurs EUR, święta, informacje o mieście i koszty.",
+  "Zaplanuj wyjazd do Londynu na start w przyszłym tygodniu: dane pogodowe, walutowe, święta i checklistę.",
+  "Porównaj Barcelonę i Lizbonę jako miejsce zimowego obozu biegowego, korzystając z pogody, kursu EUR, świąt, Wikipedii i kalkulatora.",
 ];
 
 export default function TravelPage() {

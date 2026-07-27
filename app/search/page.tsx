@@ -13,10 +13,10 @@ import {
 import { MessageContent } from "../components/message-content";
 
 const starterQuestions = [
-  "Użyj Google Search, znajdź najnowsze informacje o rejsach polskich żaglowców i podaj źródła.",
-  "Użyj Google Search i aktualnej daty: jaki jest najbliższy otwarty rejs STS Pogoria lub STS Fryderyk Chopin?",
-  "Przeczytaj https://stspogoria.pl i wypisz warunki uczestnictwa dla wolnej załogi.",
-  "Użyj Google Search, znajdź aktualny opis takielunku STS Kapitan Borchardt i wygeneruj jego szkic.",
+  "Wyszukaj oficjalny regulamin najbliższego półmaratonu w Warszawie i podaj źródło.",
+  "Znajdź aktualne zalecenia dotyczące nawodnienia podczas długiego biegu.",
+  "Przeczytaj stronę organizatora wybranego biegu i wypisz najważniejsze terminy.",
+  "Wyszukaj wiarygodne źródła o treningu w wysokiej temperaturze.",
 ];
 
 export default function SearchPage() {

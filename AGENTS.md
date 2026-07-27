@@ -75,3 +75,17 @@ Pull requests should include a short summary, validation steps, screenshots for 
 ## Security & Configuration Tips
 
 Keep API keys only in `.env.local`. Do not print secrets in logs or responses. When changing Gemini model IDs, test both normal streaming and fallback behavior before handing off.
+
+## Supabase Migrations
+
+Keep database schema changes in `supabase/migrations/` as committed, numbered SQL files. Apply them in ascending numeric order in Supabase SQL Editor:
+
+1. `001_initial_agent_memory.sql`
+2. `002_running_mvp.sql`
+3. `003_add_athlete_home_location.sql`
+
+For every new schema change, add a new migration with the next number and a descriptive snake_case name. Do not edit a migration that may already have been applied to a shared environment; add a follow-up migration instead. Never commit `.env.local` or Supabase keys.
+
+## Backup instrukcji
+
+Po każdej zmianie tego pliku (`AGENTS.md`) zaktualizuj jego kopię na Google Drive. Użyj istniejącego pliku `AGENTS.md` na Dysku Google, aby zachować jedną aktualną kopię zamiast tworzyć duplikaty.

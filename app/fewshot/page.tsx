@@ -5,12 +5,12 @@ import { DefaultChatTransport, type UIMessage } from "ai";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 const exampleTerms = [
-  "Takielunek stały",
-  "Takielunek ruchomy",
-  "Wachta",
-  "Zwrot przez sztag",
-  "Bukszpryt",
-  "Kapitanat portu",
+  "Próg mleczanowy",
+  "Pułap tlenowy (VO₂max)",
+  "Kadencja biegu",
+  "Strefy tętna",
+  "Trening progowy",
+  "Deload",
 ];
 
 function getMessageText(message: UIMessage) {
