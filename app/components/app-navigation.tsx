@@ -19,6 +19,7 @@ const links = [
   { href: "/react", label: "🔄 Agent ReAct" },
   { href: "/travel", label: "✈️ Podróże" },
   { href: "/extract", label: "📊 Analizator" },
+  { href: "/email-triage", label: "📧 E-mail Triage" },
   { href: "/upload", label: "📚 Baza wiedzy" },
 ];
 

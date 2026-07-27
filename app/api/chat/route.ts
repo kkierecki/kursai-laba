@@ -617,6 +617,7 @@ function createModelResponse({
   system,
   tools,
   requestId,
+  forceToolUse = false,
 }: {
   abortSignal?: AbortSignal;
   messages: ModelMessage[];
@@ -624,6 +625,7 @@ function createModelResponse({
   requestId?: string;
   system: string;
   tools: ReturnType<typeof createChatTools>;
+  forceToolUse?: boolean;
 }) {
   const result = streamText({
     model: google(model),
@@ -632,6 +634,7 @@ function createModelResponse({
     abortSignal,
     messages,
     tools,
+    toolChoice: forceToolUse ? "required" : "auto",
     // maxSteps: 3 (odpowiednik w AI SDK 7)
     stopWhen: isStepCount(6),
     onStepEnd: ({ stepNumber, toolCalls, toolResults }) => {
@@ -787,11 +790,13 @@ function createFlashStreamWithFallback({
   requestId,
   system,
   tools,
+  forceToolUse,
 }: {
   messages: ModelMessage[];
   requestId?: string;
   system: string;
   tools: ReturnType<typeof createChatTools>;
+  forceToolUse?: boolean;
 }) {
   return new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -809,6 +814,7 @@ function createFlashStreamWithFallback({
           requestId,
           system,
           tools,
+          forceToolUse,
         });
         const primaryReader = primaryResponse.body?.getReader();
 
@@ -873,6 +879,7 @@ function createFlashStreamWithFallback({
             requestId,
             system,
             tools,
+            forceToolUse,
           });
 
           await pipeResponse(fallbackResponse, controller);
@@ -903,12 +910,14 @@ function createSelectedModelStream({
   requestId,
   system,
   tools,
+  forceToolUse,
 }: {
   aiModel: AiModel;
   messages: ModelMessage[];
   requestId?: string;
   system: string;
   tools: ReturnType<typeof createChatTools>;
+  forceToolUse?: boolean;
 }) {
   if (aiModel === "pro") {
     return createModelResponse({
@@ -917,10 +926,11 @@ function createSelectedModelStream({
       requestId,
       system,
       tools,
+      forceToolUse,
     }).body;
   }
 
-  return createFlashStreamWithFallback({ messages, requestId, system, tools });
+  return createFlashStreamWithFallback({ messages, requestId, system, tools, forceToolUse });
 }
 
 export async function POST(req: Request) {
@@ -984,6 +994,7 @@ export async function POST(req: Request) {
       requestId: requestLog.requestId,
       system,
       tools: requestTools,
+      forceToolUse: isProfileBackfillCommand(lastUserText) || (images?.length ?? (image ? 1 : 0)) > 0,
     });
 
     if (!stream) {
