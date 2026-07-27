@@ -59,7 +59,7 @@ export default function DashboardPage() {
       target_unit: null,
     } : null));
     setWorkout(workoutResult.data);
-    setRecovery(recoveryResult.data);
+    setRecovery(recoveryResult.data && [recoveryResult.data.sleep_hours, recoveryResult.data.fatigue, recoveryResult.data.soreness].some((value) => value !== null) ? recoveryResult.data : null);
     setUserName(userProfileResult.data?.name?.trim() || null);
     const city = savedProfile?.home_location ?? preferences.home_location ?? preferences.location;
     if (city) {

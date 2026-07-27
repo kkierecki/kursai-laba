@@ -452,7 +452,7 @@ async function createHistoricalBackfillPrompt(userId: string) {
   try {
     const history = await getHistoricalTrainingMemory(userId);
     return `## HISTORIA DO UZUPEŁNIENIA PROFILU
-Użytkownik wywołał /uzupelnij-profil. Przejrzyj poniższą historię i zapisz przez narzędzia tylko dane jednoznacznie podane przez użytkownika albo wyraźnie oznaczone w odpowiedzi asystenta jako odczytane ze screena.
+Użytkownik wywołał /uzupelnij-profil. Przejrzyj poniższą historię i zapisz przez narzędzia tylko dane jednoznacznie podane przez użytkownika albo wyraźnie oznaczone w odpowiedzi asystenta jako odczytane ze screena. Dla każdej znalezionej wartości MUSISZ użyć właściwego narzędzia zapisu; nie wystarczy jej wymienić w odpowiedzi.
 Nie traktuj daty wiadomości jako daty treningu ani daty pomiaru. Nie zapisuj przypuszczeń, rekomendacji ani wartości przykładowych. Jeśli wartość koliduje z profilem, respektuj mechanizm potwierdzenia narzędzia. Na końcu podaj listę zapisanych rekordów i danych, których nie udało się zapisać.
 ${JSON.stringify(history)}`;
   } catch {
@@ -633,7 +633,7 @@ function createModelResponse({
     messages,
     tools,
     // maxSteps: 3 (odpowiednik w AI SDK 7)
-    stopWhen: isStepCount(3),
+    stopWhen: isStepCount(6),
     onStepEnd: ({ stepNumber, toolCalls, toolResults }) => {
       void logTechnical("INFO", "ai.step.finished", {
         route: "/api/chat",

@@ -130,6 +130,10 @@ export async function saveAthleteLocation(userId: string, homeLocation: string) 
 }
 
 export async function saveAthleteProfile(userId: string, input: AthleteProfileInput) {
+  const hasProfileData = Object.entries(input).some(([key, value]) =>
+    !["observedOn", "confirmed"].includes(key) && value !== undefined,
+  );
+  if (!hasProfileData) return { saved: false, error: "Brak parametrów profilu do zapisania." };
   const { data: existing, error: loadError } = await supabase
     .from("athlete_profiles")
     .select("birth_year,weight_kg,height_cm,hr_max,lactate_threshold_hr,lactate_threshold_pace_seconds,vo2max,typical_cadence_spm,metric_observed_at")
@@ -203,6 +207,8 @@ export async function saveWorkout(userId: string, input: WorkoutInput) {
 }
 
 export async function saveRecoveryLog(userId: string, input: RecoveryInput) {
+  const hasRecoveryData = Object.entries(input).some(([key, value]) => key !== "loggedOn" && value !== undefined);
+  if (!hasRecoveryData) return { saved: false, error: "Brak danych regeneracji do zapisania." };
   const { data, error } = await supabase.from("recovery_logs").upsert(compact({
     user_id: userId,
     logged_on: input.loggedOn,
