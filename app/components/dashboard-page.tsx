@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 
 type Weather = { error: string } | { city: string; temperature: number; humidity: number; windSpeed: number; description: string };
@@ -67,6 +67,35 @@ function preferenceNumber(preferences: StoredPreferences, ...keys: string[]) {
   return Number.isFinite(number) ? number : null;
 }
 
+type DashboardIconName = "goal" | "profile" | "workout" | "history" | "recovery" | "weather" | "start" | "calendar" | "distance" | "pace" | "heart" | "time";
+
+function DashboardIcon({ name }: { name: DashboardIconName }) {
+  const common = { fill: "none", stroke: "currentColor", strokeLinecap: "round" as const, strokeLinejoin: "round" as const, strokeWidth: 1.6 };
+  const icons: Record<DashboardIconName, ReactNode> = {
+    goal: <><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /></>,
+    profile: <><circle cx="12" cy="8" r="3.5" /><path d="M5 20c.9-3.2 3.1-5 7-5s6.1 1.8 7 5" /></>,
+    workout: <><path d="M3 12h4l2.4-6 4.2 12 2.4-6H21" /></>,
+    history: <><path d="M3 12a9 9 0 1 0 3-6.7" /><path d="M3 4v5h5M12 7v5l3 2" /></>,
+    recovery: <><path d="M4 14c2-4 4.6-6 8-6 2.4 0 4.5 1 6.5 3" /><path d="M5 18h14M7 14v4M17 11v7" /></>,
+    weather: <><path d="M7 18h10a4 4 0 0 0 .7-7.9A5.8 5.8 0 0 0 6.6 11.7 3.2 3.2 0 0 0 7 18Z" /><path d="M12 3v2M4.4 6.4l1.4 1.4M19.6 6.4l-1.4 1.4" /></>,
+    start: <><path d="m5 19 14-7L5 5v14Z" /></>,
+    calendar: <><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M8 3v4M16 3v4M4 10h16" /></>,
+    distance: <><path d="M5 18 10 6l5 12" /><path d="M7.2 13h5.6" /><path d="M16 18h3" /></>,
+    pace: <><circle cx="12" cy="12" r="8" /><path d="m12 7 3 5-5 3" /></>,
+    heart: <><path d="M20 9.5C20 14 12 19 12 19S4 14 4 9.5A3.5 3.5 0 0 1 10.2 7L12 8.8 13.8 7A3.5 3.5 0 0 1 20 9.5Z" /></>,
+    time: <><circle cx="12" cy="12" r="8" /><path d="M12 7v5l3 2" /></>,
+  };
+  return <svg aria-hidden="true" className="dashboard-icon" viewBox="0 0 24 24" {...common}>{icons[name]}</svg>;
+}
+
+function DashboardHeading({ icon, label }: { icon: DashboardIconName; label: string }) {
+  return <div className="card-heading"><span className="dashboard-heading-icon"><DashboardIcon name={icon} /></span><h2>{label}</h2></div>;
+}
+
+function DashboardMetric({ icon, label, value }: { icon: DashboardIconName; label: string; value: ReactNode }) {
+  return <div className="dashboard-metric"><DashboardIcon name={icon} /><div><dt>{label}</dt><dd>{value}</dd></div></div>;
+}
+
 export default function DashboardPage() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [heartRateZones, setHeartRateZones] = useState<HeartRateZone[]>([]);
@@ -77,6 +106,8 @@ export default function DashboardPage() {
   const [weather, setWeather] = useState<Weather | null>(null);
   const [userName, setUserName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [briefingState, setBriefingState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [briefingMessage, setBriefingMessage] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -133,16 +164,38 @@ export default function DashboardPage() {
 
   useEffect(() => { void load(); }, [load]);
 
+  async function generateMorningBriefing() {
+    setBriefingState("loading");
+    setBriefingMessage("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("Sesja wygasła. Zaloguj się ponownie.");
+      const response = await fetch("/api/cron/morning", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const payload = await response.json() as { content?: string; error?: string; warning?: string };
+      if (!response.ok || !payload.content) throw new Error(payload.error ?? "Nie udało się wygenerować briefingu.");
+      setBriefingState("ready");
+      setBriefingMessage(`${payload.content}${payload.warning ? `\n\n⚠️ ${payload.warning}` : ""}`);
+    } catch (error) {
+      setBriefingState("error");
+      setBriefingMessage(error instanceof Error ? error.message : "Nie udało się wygenerować briefingu.");
+    }
+  }
+
+  const goalDetail = goal && profile?.notes && profile.notes.toLocaleLowerCase().includes(goal.title.toLocaleLowerCase()) ? profile.notes : null;
+
   return <main className="dashboard-shell runner-dashboard">
-    <header className="dashboard-hero runner-hero"><div><p>🏃 {userName ? `Cześć, ${userName}!` : "Cześć!"}</p><h1>Twój bieg w jednym miejscu</h1><span>{profile?.home_location ? `📍 ${profile.home_location}` : "Dodaj lokalizację w czacie, aby dopasować pogodę i teren."}</span></div><button disabled={loading} onClick={() => void load()} type="button">↻ Odśwież</button></header>
+    <header className="dashboard-hero runner-hero"><div><p>{userName ? `Cześć, ${userName}!` : "Cześć!"}</p><h1>Biegaj mądrzej. Docieraj dalej.</h1><span>{profile?.home_location ?? "Dodaj lokalizację w czacie, aby dopasować pogodę i teren."}</span></div><div className="quick-actions"><button disabled={briefingState === "loading"} onClick={() => void generateMorningBriefing()} type="button">{briefingState === "loading" ? "Tworzę briefing…" : "Wygeneruj briefing"}</button><button disabled={loading} onClick={() => void load()} type="button">Odśwież</button></div></header>
+    {briefingState !== "idle" && <section className="dashboard-card" aria-live="polite"><DashboardHeading icon="calendar" label="Dzisiejszy briefing" /><pre className={briefingState === "error" ? "card-error" : "briefing-content"}>{briefingMessage}</pre></section>}
     <section className="dashboard-grid" aria-label="Podsumowanie biegacza">
-      <article className="dashboard-card goal-card"><div className="card-heading"><h2>🎯 Najbliższy cel</h2></div>{goal ? <><strong className="goal-title">{goal.title}</strong>{goal.target_value !== null && <p>{goal.target_metric}: {goal.target_value} {goal.target_unit}</p>}{goal.target_date && <small>Termin: {new Date(`${goal.target_date}T00:00:00`).toLocaleDateString("pl-PL")}</small>}</> : <p>Nie masz aktywnego celu. Opisz go trenerowi w czacie.</p>}</article>
-      <article className="dashboard-card metrics-card profile-card"><div className="card-heading"><h2>⚡ Profil biegacza</h2></div>{profile ? <><dl className="runner-metrics"><div><dt>Lokalizacja</dt><dd>{profile.home_location ?? "—"}</dd></div><div><dt>Rok urodzenia</dt><dd>{profile.birth_year ?? "—"}</dd></div><div><dt>Płeć</dt><dd>{{ female: "kobieta", male: "mężczyzna", nonbinary: "niebinarna", undisclosed: "nie podano" }[profile.sex ?? "undisclosed"]}</dd></div><div><dt>Wzrost</dt><dd>{profile.height_cm ?? "—"} {profile.height_cm && "cm"}</dd></div><div><dt>Masa</dt><dd>{profile.weight_kg ?? "—"} {profile.weight_kg && "kg"}</dd></div><div><dt>HRmax</dt><dd>{profile.hr_max ?? "—"} {profile.hr_max && "bpm"}</dd></div><div><dt>Próg mleczanowy</dt><dd>{profile.lactate_threshold_hr ?? "—"} {profile.lactate_threshold_hr && "bpm"}</dd></div><div><dt>Tempo progowe</dt><dd>{profilePace(profile.lactate_threshold_pace_seconds) ?? "—"}</dd></div><div><dt>VO₂max</dt><dd>{profile.vo2max ?? "—"}</dd></div><div><dt>Kadencja</dt><dd>{profile.typical_cadence_spm ?? "—"} {profile.typical_cadence_spm && "spm"}</dd></div></dl>{heartRateZones.length > 0 && <p className="profile-detail"><b>Strefy tętna:</b> {heartRateZones.map((zone) => `Z${zone.zone}: ${zone.lower_bpm}–${zone.upper_bpm} bpm`).join(" · ")}</p>}{profile.weekly_availability && <p className="profile-detail"><b>Dostępność:</b> {profile.weekly_availability}</p>}{profile.injury_limitations && <p className="profile-detail"><b>Ograniczenia zdrowotne:</b> {profile.injury_limitations}</p>}{profile.notes && <p className="profile-detail"><b>Notatki:</b> {profile.notes}</p>}</> : <p>Ładuję profil…</p>}</article>
-      <article className="dashboard-card workout-card"><div className="card-heading"><h2>👟 Ostatni trening</h2></div>{workout ? <><strong>{workout.summary}</strong><p>{new Date(`${workout.performed_on}T00:00:00`).toLocaleDateString("pl-PL")}</p><dl><div><dt>Dystans</dt><dd>{workout.distance_m ? `${(workout.distance_m / 1000).toFixed(1)} km` : "—"}</dd></div><div><dt>Tempo</dt><dd>{pace(workout.average_pace_seconds)}</dd></div><div><dt>Śr. HR</dt><dd>{workout.average_hr ?? "—"}</dd></div></dl></> : <p>Brak zapisanego treningu.</p>}</article>
-      <article className="dashboard-card training-stats-card"><div className="card-heading"><h2>📊 Historia treningów</h2></div>{trainingStats && trainingStats.count > 0 ? <><dl className="runner-metrics"><div><dt>Treningi łącznie</dt><dd>{trainingStats.count}</dd></div><div><dt>Suma kilometrów</dt><dd>{(trainingStats.distanceM / 1000).toFixed(1)} km</dd></div><div><dt>Suma czasu</dt><dd>{duration(trainingStats.durationSeconds)}</dd></div><div><dt>Monitoring od</dt><dd>{trainingStats.monitoredSince ? new Date(`${trainingStats.monitoredSince}T00:00:00`).toLocaleDateString("pl-PL") : "—"}</dd></div><div><dt>Ostatnie 30 dni</dt><dd>{trainingStats.last30DaysCount} · {(trainingStats.last30DaysDistanceM / 1000).toFixed(1)} km</dd></div><div><dt>Najdłuższy bieg</dt><dd>{trainingStats.longestDistanceM ? `${(trainingStats.longestDistanceM / 1000).toFixed(1)} km` : "—"}</dd></div><div><dt>Średnie tempo</dt><dd>{profilePace(trainingStats.averagePaceSeconds) ?? "—"}</dd></div><div><dt>Średnie HR</dt><dd>{trainingStats.averageHr ?? "—"} {trainingStats.averageHr && "bpm"}</dd></div></dl></> : <p>Dodaj pierwszy trening, aby rozpocząć monitorowanie historii.</p>}</article>
-      <article className="dashboard-card recovery-card"><div className="card-heading"><h2>🛌 Regeneracja</h2></div>{recovery ? <><strong>{new Date(`${recovery.logged_on}T00:00:00`).toLocaleDateString("pl-PL")}</strong><dl><div><dt>Sen</dt><dd>{recovery.sleep_hours ?? "—"} h</dd></div><div><dt>Zmęczenie</dt><dd>{recovery.fatigue ?? "—"}/10</dd></div><div><dt>Bolesność</dt><dd>{recovery.soreness ?? "—"}/10</dd></div></dl></> : <p>Dodaj dzisiejszy sen i samopoczucie, zanim poprosisz o kolejny trening.</p>}</article>
-      <article className="dashboard-card weather-card runner-weather"><div className="card-heading"><h2>🌦️ Warunki do biegu</h2></div>{!profile?.home_location ? <p>Podaj trenerowi miejscowość lub okolicę.</p> : !weather ? <p>Ładuję pogodę…</p> : "error" in weather ? <p className="card-error">{weather.error}</p> : <><strong>{weather.city} · {weather.temperature.toFixed(1)}°C</strong><p>{weather.description}</p><small>Wiatr {weather.windSpeed} km/h · wilgotność {weather.humidity}%</small></>}</article>
-      <article className="dashboard-card actions-card"><div className="card-heading"><h2>🚀 Zacznij</h2></div><div className="quick-actions"><Link href="/chat">Dodaj trening</Link><Link href="/vision">Analizuj screenshot</Link><Link href="/chat">Ustaw cel</Link></div></article>
+      <article className="dashboard-card goal-card"><DashboardHeading icon="goal" label="Najbliższy cel" />{goal ? <><strong className="goal-title">{goal.title}</strong><div className="goal-details">{goal.target_value !== null && <p><DashboardIcon name="pace" />{goal.target_metric}: {goal.target_value} {goal.target_unit}</p>}{goal.target_date && <p><DashboardIcon name="calendar" />Termin: {new Date(`${goal.target_date}T00:00:00`).toLocaleDateString("pl-PL")}</p>}{goalDetail && <p className="goal-description">{goalDetail}</p>}</div></> : <p>Nie masz aktywnego celu. Opisz go trenerowi w czacie.</p>}</article>
+      <article className="dashboard-card metrics-card profile-card"><DashboardHeading icon="profile" label="Profil biegacza" />{profile ? <><dl className="runner-metrics"><div><dt>Lokalizacja</dt><dd>{profile.home_location ?? "—"}</dd></div><div><dt>Rok urodzenia</dt><dd>{profile.birth_year ?? "—"}</dd></div><div><dt>Płeć</dt><dd>{{ female: "kobieta", male: "mężczyzna", nonbinary: "niebinarna", undisclosed: "nie podano" }[profile.sex ?? "undisclosed"]}</dd></div><div><dt>Wzrost</dt><dd>{profile.height_cm ?? "—"} {profile.height_cm && "cm"}</dd></div><div><dt>Masa</dt><dd>{profile.weight_kg ?? "—"} {profile.weight_kg && "kg"}</dd></div><div><dt>HRmax</dt><dd>{profile.hr_max ?? "—"} {profile.hr_max && "bpm"}</dd></div><div><dt>Próg mleczanowy</dt><dd>{profile.lactate_threshold_hr ?? "—"} {profile.lactate_threshold_hr && "bpm"}</dd></div><div><dt>Tempo progowe</dt><dd>{profilePace(profile.lactate_threshold_pace_seconds) ?? "—"}</dd></div><div><dt>VO₂max</dt><dd>{profile.vo2max ?? "—"}</dd></div><div><dt>Kadencja</dt><dd>{profile.typical_cadence_spm ?? "—"} {profile.typical_cadence_spm && "spm"}</dd></div></dl>{heartRateZones.length > 0 && <p className="profile-detail"><b>Strefy tętna:</b> {heartRateZones.map((zone) => `Z${zone.zone}: ${zone.lower_bpm}–${zone.upper_bpm} bpm`).join(" · ")}</p>}{profile.weekly_availability && <p className="profile-detail"><b>Dostępność:</b> {profile.weekly_availability}</p>}{profile.injury_limitations && <p className="profile-detail"><b>Ograniczenia zdrowotne:</b> {profile.injury_limitations}</p>}{profile.notes && <p className="profile-detail"><b>Notatki:</b> {profile.notes}</p>}</> : <p>Ładuję profil…</p>}</article>
+      <article className="dashboard-card workout-card"><DashboardHeading icon="workout" label="Ostatni trening" />{workout ? <><strong>{workout.summary}</strong><p className="workout-date"><DashboardIcon name="calendar" />{new Date(`${workout.performed_on}T00:00:00`).toLocaleDateString("pl-PL")}</p><dl className="workout-metrics"><DashboardMetric icon="distance" label="Dystans" value={workout.distance_m ? `${(workout.distance_m / 1000).toFixed(1)} km` : "—"} /><DashboardMetric icon="pace" label="Tempo" value={pace(workout.average_pace_seconds)} /><DashboardMetric icon="heart" label="Śr. HR" value={workout.average_hr ?? "—"} /></dl></> : <p>Brak zapisanego treningu.</p>}</article>
+      <article className="dashboard-card training-stats-card"><DashboardHeading icon="history" label="Historia treningów" />{trainingStats && trainingStats.count > 0 ? <><dl className="runner-metrics stats-metrics"><DashboardMetric icon="workout" label="Treningi łącznie" value={trainingStats.count} /><DashboardMetric icon="distance" label="Suma kilometrów" value={`${(trainingStats.distanceM / 1000).toFixed(1)} km`} /><DashboardMetric icon="time" label="Suma czasu" value={duration(trainingStats.durationSeconds)} /><DashboardMetric icon="calendar" label="Monitoring od" value={trainingStats.monitoredSince ? new Date(`${trainingStats.monitoredSince}T00:00:00`).toLocaleDateString("pl-PL") : "—"} /><DashboardMetric icon="history" label="Ostatnie 30 dni" value={`${trainingStats.last30DaysCount} · ${(trainingStats.last30DaysDistanceM / 1000).toFixed(1)} km`} /><DashboardMetric icon="distance" label="Najdłuższy bieg" value={trainingStats.longestDistanceM ? `${(trainingStats.longestDistanceM / 1000).toFixed(1)} km` : "—"} /><DashboardMetric icon="pace" label="Średnie tempo" value={profilePace(trainingStats.averagePaceSeconds) ?? "—"} /><DashboardMetric icon="heart" label="Średnie HR" value={trainingStats.averageHr ? `${trainingStats.averageHr} bpm` : "—"} /></dl></> : <p>Dodaj pierwszy trening, aby rozpocząć monitorowanie historii.</p>}</article>
+      <article className="dashboard-card recovery-card"><DashboardHeading icon="recovery" label="Regeneracja" />{recovery ? <><strong>{new Date(`${recovery.logged_on}T00:00:00`).toLocaleDateString("pl-PL")}</strong><dl><div><dt>Sen</dt><dd>{recovery.sleep_hours ?? "—"} h</dd></div><div><dt>Zmęczenie</dt><dd>{recovery.fatigue ?? "—"}/10</dd></div><div><dt>Bolesność</dt><dd>{recovery.soreness ?? "—"}/10</dd></div></dl></> : <p>Dodaj dzisiejszy sen i samopoczucie, zanim poprosisz o kolejny trening.</p>}</article>
+      <article className="dashboard-card weather-card runner-weather"><DashboardHeading icon="weather" label="Warunki do biegu" />{!profile?.home_location ? <p>Podaj trenerowi miejscowość lub okolicę.</p> : !weather ? <p>Ładuję pogodę…</p> : "error" in weather ? <p className="card-error">{weather.error}</p> : <><strong>{weather.city} · {weather.temperature.toFixed(1)}°C</strong><p>{weather.description}</p><small>Wiatr {weather.windSpeed} km/h · wilgotność {weather.humidity}%</small></>}</article>
+      <article className="dashboard-card actions-card"><DashboardHeading icon="start" label="Zacznij" /><div className="quick-actions"><Link href="/chat">Dodaj trening</Link><Link href="/vision">Analizuj screenshot</Link><Link href="/chat">Ustaw cel</Link></div></article>
     </section>
   </main>;
 }
