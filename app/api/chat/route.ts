@@ -403,17 +403,18 @@ function createChatTools(userId: string | null) {
       },
     }),
     saveRecoveryLog: tool({
-      description: "Zapisuje regenerację na konkretny dzień. Użyj tylko dla wartości jawnie podanych przez użytkownika.",
-      inputSchema: jsonSchema<{ loggedOn: string; sleepHours?: number; sleepQuality?: number; restingHr?: number; hrvMs?: number; fatigue?: number; soreness?: number; painDescription?: string; stress?: number; notes?: string }>({
+      description: "Zapisuje regenerację na konkretny dzień. Użyj tylko dla wartości jawnie podanych przez użytkownika. Przy wyniku jakości snu zawsze zachowaj widoczną skalę: dla 80/100 podaj sleepQuality=80 i sleepQualityScale=100, dla 4/5 podaj sleepQuality=4 i sleepQualityScale=5. Nie przeliczaj wyniku między skalami.",
+      inputSchema: jsonSchema<{ loggedOn: string; sleepHours?: number; sleepQuality?: number; sleepQualityScale?: number; restingHr?: number; hrvMs?: number; fatigue?: number; soreness?: number; painDescription?: string; stress?: number; notes?: string }>({
         type: "object",
-        properties: { loggedOn: { type: "string" }, sleepHours: { type: "number" }, sleepQuality: { type: "number" }, restingHr: { type: "number" }, hrvMs: { type: "number" }, fatigue: { type: "number" }, soreness: { type: "number" }, painDescription: { type: "string" }, stress: { type: "number" }, notes: { type: "string" } },
+        properties: { loggedOn: { type: "string" }, sleepHours: { type: "number" }, sleepQuality: { type: "number" }, sleepQualityScale: { type: "number", description: "Dopuszczalna wyłącznie skala 5 albo 100." }, restingHr: { type: "number" }, hrvMs: { type: "number" }, fatigue: { type: "number" }, soreness: { type: "number" }, painDescription: { type: "string" }, stress: { type: "number" }, notes: { type: "string" } },
         required: ["loggedOn"],
         additionalProperties: false,
       }),
       execute: async (input) => {
         try {
           return await saveRecoveryLog(userId, input);
-        } catch {
+        } catch (error) {
+          void logTechnical("ERROR", "runner.recovery.save.failed", { route: "/api/chat", error });
           return { saved: false, error: "Nie udało się zapisać regeneracji." };
         }
       },

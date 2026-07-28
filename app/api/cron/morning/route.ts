@@ -46,7 +46,17 @@ async function getHomeLocation(userId: string, context: RunnerContext, database:
 }
 
 async function generateBriefingForUser(userId: string, database: SupabaseClient) {
-  const [runnerContext, today] = await Promise.all([getRunnerContext(userId, database), Promise.resolve(warsawDate())]);
+  const today = warsawDate();
+  const { data: existing, error: existingError } = await database
+    .from("runner_briefings")
+    .select("id,briefing_date,created_at,content")
+    .eq("user_id", userId)
+    .eq("briefing_date", today)
+    .maybeSingle();
+  if (existingError) throw new Error(`Nie udało się odczytać briefingu: ${existingError.message}`);
+  if (existing) return { date: today, content: existing.content, briefing: existing, generated: false };
+
+  const runnerContext = await getRunnerContext(userId, database);
   const location = await getHomeLocation(userId, runnerContext, database);
   const weather = location ? await fetchWeather(location) : { error: "Brak zapisanej lokalizacji." };
   const until = addDays(today, 21);
@@ -71,7 +81,7 @@ async function generateBriefingForUser(userId: string, database: SupabaseClient)
     .single();
 
   if (saveError) throw new Error(`Nie udało się zapisać briefingu: ${saveError.message}`);
-  return { date: today, content, briefing: saved };
+  return { date: today, content, briefing: saved, generated: true };
 }
 
 function briefingSystem(today: string, until: string, location: string | null) {
@@ -119,21 +129,22 @@ export async function GET(request: Request) {
       const { data: profiles, error: profilesError } = await admin.from("user_profiles").select("id");
       if (profilesError) throw profilesError;
       const results = await Promise.allSettled((profiles ?? []).map(({ id }) => generateBriefingForUser(id, admin)));
-      const generated = results.filter((result) => result.status === "fulfilled").length;
-      const failed = results.length - generated;
+      const generated = results.filter((result) => result.status === "fulfilled" && result.value.generated).length;
+      const reused = results.filter((result) => result.status === "fulfilled" && !result.value.generated).length;
+      const failed = results.length - generated - reused;
       results.forEach((result) => {
         if (result.status === "rejected") {
           void logTechnical("ERROR", "morning-briefing.user.failed", { requestId: requestLog.requestId, error: result.reason });
         }
       });
-      const response = Response.json({ success: failed === 0, processed: results.length, generated, failed });
-      void requestLog.finish(failed === 0 ? 200 : 207, { model: "gemini-3.1-flash-lite", source: "cron", processed: results.length, generated, failed });
+      const response = Response.json({ success: failed === 0, processed: results.length, generated, reused, failed });
+      void requestLog.finish(failed === 0 ? 200 : 207, { model: "gemini-3.1-flash-lite", source: "cron", processed: results.length, generated, reused, failed });
       return response;
     }
 
     const generated = await generateBriefingForUser(user.id, supabase);
-    const response = Response.json({ success: true, saved: true, ...generated });
-    void requestLog.finish(200, { model: "gemini-3.1-flash-lite", saved: true, source: "user" });
+    const response = Response.json({ success: true, saved: true, cached: !generated.generated, ...generated });
+    void requestLog.finish(200, { model: "gemini-3.1-flash-lite", saved: true, cached: !generated.generated, source: "user" });
     return response;
   } catch (error) {
     await requestLog.fail(error);

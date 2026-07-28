@@ -38,6 +38,7 @@ type RecoveryInput = {
   loggedOn: string;
   sleepHours?: number;
   sleepQuality?: number;
+  sleepQualityScale?: number;
   restingHr?: number;
   hrvMs?: number;
   fatigue?: number;
@@ -85,7 +86,7 @@ export async function getRunnerContext(userId: string, database: SupabaseClient 
     database.from("athlete_profiles").select("*").eq("user_id", userId).maybeSingle(),
     database.from("running_goals").select("title,description,target_metric,target_value,target_unit,target_date,priority").eq("user_id", userId).eq("status", "active").order("priority", { ascending: true }),
     database.from("workouts").select("performed_on,summary,training_type,distance_m,duration_seconds,average_hr,average_pace_seconds,average_cadence_spm,unstructured_notes,extraction_confidence").eq("user_id", userId).order("performed_on", { ascending: false }).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-    database.from("recovery_logs").select("logged_on,sleep_hours,sleep_quality,resting_hr,hrv_ms,fatigue,soreness,pain_description,stress,notes").eq("user_id", userId).order("logged_on", { ascending: false }).limit(1).maybeSingle(),
+    database.from("recovery_logs").select("logged_on,sleep_hours,sleep_quality,sleep_quality_scale,resting_hr,hrv_ms,fatigue,soreness,pain_description,stress,notes").eq("user_id", userId).order("logged_on", { ascending: false }).limit(1).maybeSingle(),
     database.from("conversations").select("updated_at").eq("user_id", userId).order("updated_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
 
@@ -352,11 +353,20 @@ export async function deleteWorkout(userId: string, workoutId: string) {
 export async function saveRecoveryLog(userId: string, input: RecoveryInput) {
   const hasRecoveryData = Object.entries(input).some(([key, value]) => key !== "loggedOn" && value !== undefined);
   if (!hasRecoveryData) return { saved: false, error: "Brak danych regeneracji do zapisania." };
+  if (input.sleepQuality !== undefined) {
+    if (input.sleepQualityScale !== 5 && input.sleepQualityScale !== 100) {
+      return { saved: false, error: "Podaj widoczną skalę jakości snu: 5 albo 100." };
+    }
+    if (input.sleepQuality < 1 || input.sleepQuality > input.sleepQualityScale) {
+      return { saved: false, error: "Wynik jakości snu musi mieścić się w podanej skali." };
+    }
+  }
   const { data, error } = await supabase.from("recovery_logs").upsert(compact({
     user_id: userId,
     logged_on: input.loggedOn,
     sleep_hours: input.sleepHours,
     sleep_quality: input.sleepQuality,
+    sleep_quality_scale: input.sleepQualityScale,
     resting_hr: input.restingHr,
     hrv_ms: input.hrvMs,
     fatigue: input.fatigue,
