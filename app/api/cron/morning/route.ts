@@ -4,7 +4,9 @@ import { fetchWeather } from "../../../../lib/agent-tools";
 import { getRequestUser } from "../../../../lib/request-user";
 import { getRunnerContext } from "../../../../lib/running-data";
 import { supabase } from "../../../../lib/supabase";
+import { createSupabaseAdminClient } from "../../../../lib/supabase-admin";
 import { beginTechnicalRequest, logTechnical } from "../../../../lib/technical-logger";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const maxDuration = 90;
 export const dynamic = "force-dynamic";
@@ -28,11 +30,11 @@ function addDays(date: string, days: number) {
 
 type RunnerContext = Awaited<ReturnType<typeof getRunnerContext>>;
 
-async function getHomeLocation(userId: string, context: RunnerContext) {
+async function getHomeLocation(userId: string, context: RunnerContext, database: SupabaseClient) {
   const profileLocation = context.profile?.home_location;
   if (typeof profileLocation === "string" && profileLocation.trim()) return profileLocation.trim();
 
-  const { data } = await supabase
+  const { data } = await database
     .from("user_profiles")
     .select("preferences")
     .eq("id", userId)
@@ -41,6 +43,35 @@ async function getHomeLocation(userId: string, context: RunnerContext) {
   if (!preferences || typeof preferences !== "object" || Array.isArray(preferences)) return null;
   const fallback = (preferences as Record<string, unknown>).home_location;
   return typeof fallback === "string" && fallback.trim() ? fallback.trim() : null;
+}
+
+async function generateBriefingForUser(userId: string, database: SupabaseClient) {
+  const [runnerContext, today] = await Promise.all([getRunnerContext(userId, database), Promise.resolve(warsawDate())]);
+  const location = await getHomeLocation(userId, runnerContext, database);
+  const weather = location ? await fetchWeather(location) : { error: "Brak zapisanej lokalizacji." };
+  const until = addDays(today, 21);
+
+  const result = await generateText({
+    model: google("gemini-3.1-flash-lite"),
+    system: briefingSystem(today, until, location),
+    prompt: `Przygotuj briefing na podstawie poniższych pewnych danych.\n\nKontekst biegacza:\n${JSON.stringify(runnerContext)}\n\nPogoda:\n${JSON.stringify(weather)}`,
+    tools: location ? { google_search: google.tools.googleSearch({}) } : undefined,
+    stopWhen: isStepCount(8),
+    maxOutputTokens: 1800,
+    temperature: 0.1,
+  });
+
+  const content = result.text.trim();
+  if (!content) throw new Error("Model nie zwrócił treści briefingu.");
+  const context = { location, weather, lastWorkout: runnerContext.lastWorkout, lastRecovery: runnerContext.lastRecovery, goals: runnerContext.goals };
+  const { data: saved, error: saveError } = await database
+    .from("runner_briefings")
+    .upsert({ user_id: userId, briefing_date: today, content, context }, { onConflict: "user_id,briefing_date" })
+    .select("id,briefing_date,created_at")
+    .single();
+
+  if (saveError) throw new Error(`Nie udało się zapisać briefingu: ${saveError.message}`);
+  return { date: today, content, briefing: saved };
 }
 
 function briefingSystem(today: string, until: string, location: string | null) {
@@ -72,47 +103,37 @@ W sekcji o biegach podaj maksymalnie trzy krótkie pozycje: nazwa, data, miejsco
 export async function GET(request: Request) {
   const requestLog = beginTechnicalRequest(request, "/api/cron/morning");
   try {
-    const user = await getRequestUser(request);
+    const authorization = request.headers.get("authorization");
+    const cronSecret = process.env.CRON_SECRET;
+    const isCronRequest = Boolean(cronSecret) && authorization === `Bearer ${cronSecret}`;
+
+    const user = isCronRequest ? null : await getRequestUser(request);
     if (!user) {
-      const response = Response.json({ error: "Zaloguj się, aby wygenerować swój briefing." }, { status: 401 });
-      void requestLog.finish(401);
+      if (!isCronRequest) {
+        const response = Response.json({ error: "Zaloguj się, aby wygenerować swój briefing." }, { status: 401 });
+        void requestLog.finish(401);
+        return response;
+      }
+
+      const admin = createSupabaseAdminClient();
+      const { data: profiles, error: profilesError } = await admin.from("user_profiles").select("id");
+      if (profilesError) throw profilesError;
+      const results = await Promise.allSettled((profiles ?? []).map(({ id }) => generateBriefingForUser(id, admin)));
+      const generated = results.filter((result) => result.status === "fulfilled").length;
+      const failed = results.length - generated;
+      results.forEach((result) => {
+        if (result.status === "rejected") {
+          void logTechnical("ERROR", "morning-briefing.user.failed", { requestId: requestLog.requestId, error: result.reason });
+        }
+      });
+      const response = Response.json({ success: failed === 0, processed: results.length, generated, failed });
+      void requestLog.finish(failed === 0 ? 200 : 207, { model: "gemini-3.1-flash-lite", source: "cron", processed: results.length, generated, failed });
       return response;
     }
 
-    const [runnerContext, today] = await Promise.all([getRunnerContext(user.id), Promise.resolve(warsawDate())]);
-    const location = await getHomeLocation(user.id, runnerContext);
-    const weather = location ? await fetchWeather(location) : { error: "Brak zapisanej lokalizacji." };
-    const until = addDays(today, 21);
-
-    const result = await generateText({
-      model: google("gemini-3.1-flash-lite"),
-      system: briefingSystem(today, until, location),
-      prompt: `Przygotuj briefing na podstawie poniższych pewnych danych.\n\nKontekst biegacza:\n${JSON.stringify(runnerContext)}\n\nPogoda:\n${JSON.stringify(weather)}`,
-      tools: location ? { google_search: google.tools.googleSearch({}) } : undefined,
-      stopWhen: isStepCount(8),
-      maxOutputTokens: 1800,
-      temperature: 0.1,
-    });
-
-    const content = result.text.trim();
-    if (!content) throw new Error("Model nie zwrócił treści briefingu.");
-
-    const context = { location, weather, lastWorkout: runnerContext.lastWorkout, lastRecovery: runnerContext.lastRecovery, goals: runnerContext.goals };
-    const { data: saved, error: saveError } = await supabase
-      .from("runner_briefings")
-      .upsert({ user_id: user.id, briefing_date: today, content, context }, { onConflict: "user_id,briefing_date" })
-      .select("id,briefing_date,created_at")
-      .single();
-
-    if (saveError) {
-      void logTechnical("WARN", "morning-briefing.save.unavailable", { requestId: requestLog.requestId, error: saveError });
-      const response = Response.json({ success: true, saved: false, date: today, content, warning: "Briefing został wygenerowany, ale nie został zapisany. Uruchom migrację 008_add_runner_briefings.sql w Supabase." });
-      void requestLog.finish(200, { model: "gemini-3.1-flash-lite", saved: false });
-      return response;
-    }
-
-    const response = Response.json({ success: true, saved: true, date: today, briefing: saved, content });
-    void requestLog.finish(200, { model: "gemini-3.1-flash-lite", saved: true });
+    const generated = await generateBriefingForUser(user.id, supabase);
+    const response = Response.json({ success: true, saved: true, ...generated });
+    void requestLog.finish(200, { model: "gemini-3.1-flash-lite", saved: true, source: "user" });
     return response;
   } catch (error) {
     await requestLog.fail(error);

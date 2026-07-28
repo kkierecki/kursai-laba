@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { saveUserPreference } from "./user-profile";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 type RunningGoalInput = {
   title: string;
@@ -79,13 +80,13 @@ function normalizeSex(value: AthleteProfileInput["sex"] | string | undefined) {
   return undefined;
 }
 
-export async function getRunnerContext(userId: string) {
+export async function getRunnerContext(userId: string, database: SupabaseClient = supabase) {
   const [profile, goals, workout, recovery, conversation] = await Promise.all([
-    supabase.from("athlete_profiles").select("*").eq("user_id", userId).maybeSingle(),
-    supabase.from("running_goals").select("title,description,target_metric,target_value,target_unit,target_date,priority").eq("user_id", userId).eq("status", "active").order("priority", { ascending: true }),
-    supabase.from("workouts").select("performed_on,summary,training_type,distance_m,duration_seconds,average_hr,average_pace_seconds,average_cadence_spm,unstructured_notes,extraction_confidence").eq("user_id", userId).order("performed_on", { ascending: false }).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-    supabase.from("recovery_logs").select("logged_on,sleep_hours,sleep_quality,resting_hr,hrv_ms,fatigue,soreness,pain_description,stress,notes").eq("user_id", userId).order("logged_on", { ascending: false }).limit(1).maybeSingle(),
-    supabase.from("conversations").select("updated_at").eq("user_id", userId).order("updated_at", { ascending: false }).limit(1).maybeSingle(),
+    database.from("athlete_profiles").select("*").eq("user_id", userId).maybeSingle(),
+    database.from("running_goals").select("title,description,target_metric,target_value,target_unit,target_date,priority").eq("user_id", userId).eq("status", "active").order("priority", { ascending: true }),
+    database.from("workouts").select("performed_on,summary,training_type,distance_m,duration_seconds,average_hr,average_pace_seconds,average_cadence_spm,unstructured_notes,extraction_confidence").eq("user_id", userId).order("performed_on", { ascending: false }).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+    database.from("recovery_logs").select("logged_on,sleep_hours,sleep_quality,resting_hr,hrv_ms,fatigue,soreness,pain_description,stress,notes").eq("user_id", userId).order("logged_on", { ascending: false }).limit(1).maybeSingle(),
+    database.from("conversations").select("updated_at").eq("user_id", userId).order("updated_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
 
   const errors = [profile.error, goals.error, workout.error, recovery.error, conversation.error]
