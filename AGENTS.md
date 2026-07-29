@@ -55,6 +55,18 @@ Write TypeScript and React components with 2-space indentation. Use `PascalCase`
 
 Keep API route logic explicit and readable. Put prompt text near the route that uses it. Prefer typed unions for fixed options, for example `type AiModel = "flash" | "pro"`.
 
+## Visual Design System
+
+The runner product uses the compact **RUNLAB** visual language. Every new screen and component must follow it instead of introducing a standalone style:
+
+- Use a warm, near-white canvas (`#f7f7f5`), white surfaces, dark graphite text, and `#fc4c02` as the single primary action/accent color.
+- Use the platform sans-serif stack already defined in `app/globals.css`; body copy should stay light (`400` or below), and headings/actions should generally not exceed `600` weight.
+- Prefer small radii: 6px for controls, 8–10px for cards/panels, and avoid pill-shaped or heavily rounded UI except for intentional status badges.
+- Use consistent inline SVG line icons (roughly 1.5–1.6px stroke) for navigation, headings, metadata, and actions. Do not use emoji as UI icons or action indicators.
+- Cards should have subtle 1px borders and restrained shadows. Keep spacing compact and use clear uppercase/letter-spaced labels only for small section metadata.
+- Desktop uses the dark left navigation; mobile uses the fixed top brand bar and bottom navigation. New views must reserve the corresponding mobile space and remain usable at narrow widths.
+- On the dashboard, cards use the shared heading-icon treatment and metrics may use small line icons. Do not invent training, recovery, weather, or goal data merely to fill a visual area.
+
 ## Testing Guidelines
 
 Validate changes with:
@@ -86,6 +98,10 @@ Pull requests should include a short summary, validation steps, screenshots for 
 ## Security & Configuration Tips
 
 Keep API keys only in `.env.local`. Do not print secrets in logs or responses. When changing Gemini model IDs, test both normal streaming and fallback behavior before handing off.
+
+## Supabase Session Handling
+
+For every client-side page that calls an authenticated API route, send the Supabase access token in the `Authorization: Bearer <token>` header. Do not treat an initial missing `getSession()` result as proof that the user is logged out: the client may still be restoring the session from localStorage. First try `getSession()`; if it has no access token, call `supabase.auth.refreshSession()` and use the refreshed token. Only then show a session-expired/login error. This prevents a logged-in user from seeing a false “Wymagane logowanie” message immediately after opening a page.
 
 ## Supabase Migrations
 

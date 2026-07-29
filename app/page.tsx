@@ -215,6 +215,22 @@ export function ChatHome() {
 
     async function restoreConversation() {
       if (!authUserId) return;
+      // Every visit to /chat begins a fresh coaching session. Previous
+      // conversations remain in History, but are not restored automatically.
+      conversationGenerationRef.current += 1;
+      conversationIdRef.current = null;
+      conversationTitleRef.current = null;
+      conversationPromiseRef.current = null;
+      persistedMessageIdsRef.current = new Set();
+      setMessages([]);
+      setMessageModes({});
+      setMessageModels({});
+      setInput("");
+      setPersistenceError(null);
+      setIsRestoring(false);
+      return;
+
+      /* Legacy restore flow intentionally disabled: entering /chat starts fresh.
       setIsRestoring(true);
       setPersistenceError(null);
 
@@ -258,7 +274,7 @@ export function ChatHome() {
         const { data: storedMessages, error: messagesError } = await supabase
           .from("messages")
           .select("id,created_at,role,content")
-          .eq("conversation_id", conversation.id)
+          .eq("conversation_id", conversation!.id)
           .in("role", ["user", "assistant"])
           .order("created_at", { ascending: true });
 
@@ -271,8 +287,8 @@ export function ChatHome() {
         }
 
         const typedMessages = (storedMessages ?? []) as StoredMessage[];
-        conversationIdRef.current = conversation.id;
-        conversationTitleRef.current = conversation.title;
+        conversationIdRef.current = conversation!.id;
+        conversationTitleRef.current = conversation!.title;
         persistedMessageIdsRef.current = new Set(
           typedMessages.map((message) => message.id),
         );
@@ -293,6 +309,7 @@ export function ChatHome() {
           setIsRestoring(false);
         }
       }
+      */
     }
 
     void restoreConversation();
