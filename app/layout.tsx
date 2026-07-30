@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { AppNavigation } from "./components/app-navigation";
 import { AuthGuard } from "./components/auth-guard";
-import { LegacyHeadingIcons } from "./components/legacy-heading-icons";
 
 export const metadata: Metadata = {
   title: "Trener Biegania AI",
@@ -20,7 +19,6 @@ export default function RootLayout({
       <body>
         <AuthGuard>
           <AppNavigation />
-          <LegacyHeadingIcons />
           {children}
         </AuthGuard>
       </body>
