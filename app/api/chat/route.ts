@@ -2,6 +2,8 @@ import { google } from "@ai-sdk/google";
 import { generateAiImage } from "../../../lib/image-generation";
 import {
   UI_MESSAGE_STREAM_HEADERS,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
   convertToModelMessages,
   isStepCount,
   jsonSchema,
@@ -621,6 +623,24 @@ function createOutputSecurityTransform(requestId?: string) {
   };
 }
 
+function createSecurityMessageResponse(message: string) {
+  const stream = createUIMessageStream({
+    execute: ({ writer }) => {
+      const id = `security-${crypto.randomUUID()}`;
+      writer.write({ type: "start" });
+      writer.write({ type: "text-start", id });
+      writer.write({ type: "text-delta", id, delta: message });
+      writer.write({ type: "text-end", id });
+      writer.write({ type: "finish", finishReason: "stop" });
+    },
+  });
+
+  return createUIMessageStreamResponse({
+    headers: UI_MESSAGE_STREAM_HEADERS,
+    stream,
+  });
+}
+
 function isBusinessCommand(text: string) {
   const normalized = text.trim().toLowerCase();
 
@@ -1141,9 +1161,8 @@ export async function POST(req: Request) {
         requestId: requestLog.requestId,
         error,
       });
-      return Response.json(
-        { error: "Usługa bezpieczeństwa jest chwilowo niedostępna. Spróbuj ponownie za moment." },
-        { status: 503 },
+      return createSecurityMessageResponse(
+        "Usługa bezpieczeństwa jest chwilowo niedostępna. Spróbuj ponownie za moment.",
       );
     }
 
@@ -1155,7 +1174,7 @@ export async function POST(req: Request) {
         security: inputValidation.allowed ? "rate_limited" : inputValidation.reason,
         retryAfterSeconds: messageSlot.retry_after_seconds,
       });
-      return Response.json({ error }, { status: 429 });
+      return createSecurityMessageResponse(error);
     }
     const baseSystem = isBusinessCommand(lastUserText)
       ? `${systemPrompts[selectedMode]}\n\n${businessCommandPrompt}`

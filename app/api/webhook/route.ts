@@ -2,6 +2,7 @@ import { generateText } from "ai";
 import { google } from "@ai-sdk/google";
 import { createSupabaseAdminClient } from "../../../lib/supabase-admin";
 import { beginTechnicalRequest, logTechnical } from "../../../lib/technical-logger";
+import { containsUnsafeJsonContent } from "../../../lib/content-security";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -66,6 +67,11 @@ export async function POST(request: Request) {
     if (!payload) {
       const response = Response.json({ error: "Nieprawidłowy format zdarzenia." }, { status: 400 });
       void requestLog.finish(400);
+      return response;
+    }
+    if (containsUnsafeJsonContent(payload.data)) {
+      const response = Response.json({ error: "Zdarzenie zawiera niedozwolony aktywny kod lub znaczniki HTML." }, { status: 400 });
+      void requestLog.finish(400, { source: payload.source, type: payload.type, security: "unsafe_active_content" });
       return response;
     }
 

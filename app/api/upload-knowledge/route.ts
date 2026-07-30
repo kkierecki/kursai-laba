@@ -1,4 +1,5 @@
 import { splitIntoChunks } from "../../../lib/chunking";
+import { containsSuspiciousSqlInjection, containsUnsafeActiveContent } from "../../../lib/content-security";
 import { getRequestSupabaseClient, getRequestUser } from "../../../lib/request-user";
 
 const encoder = new TextEncoder();
@@ -18,6 +19,7 @@ export async function POST(request: Request) {
   if (!supabase) return Response.json({ error: "Wymagane logowanie." }, { status: 401 });
   const { title, content } = (await request.json()) as { title?: unknown; content?: unknown };
   if (typeof title !== "string" || !title.trim() || typeof content !== "string" || !content.trim()) return Response.json({ error: "Podaj tytuł i treść dokumentu." }, { status: 400 });
+  if (containsUnsafeActiveContent(title) || containsUnsafeActiveContent(content) || containsSuspiciousSqlInjection(content)) return Response.json({ error: "Dokument zawiera niedozwolony HTML, CSS, JavaScript lub wzorzec SQL injection." }, { status: 400 });
   const chunks = splitIntoChunks(content); const documentTitle = title.trim(); const addedAt = new Date().toISOString();
   const stream = new ReadableStream<Uint8Array>({ async start(controller) { try { for (const [index, chunk] of chunks.entries()) { const embedding = await createEmbedding(chunk); const { error } = await supabase.from("documents").insert({ title: documentTitle, content: chunk, embedding: `[${embedding.join(",")}]`, user_id: user.id, metadata: { source: documentTitle, chunk_index: index, total_chunks: chunks.length, added_at: addedAt } }); if (error) throw new Error(`Nie udało się zapisać fragmentu ${index + 1}: ${error.message}`); event(controller, { type: "progress", current: index + 1, total: chunks.length }); } event(controller, { type: "complete", chunksSaved: chunks.length }); } catch (error) { event(controller, { type: "error", message: error instanceof Error ? error.message : "Wystąpił nieznany błąd." }); } finally { controller.close(); } } });
   return new Response(stream, { headers: { "Content-Type": "application/x-ndjson", "Cache-Control": "no-cache" } });

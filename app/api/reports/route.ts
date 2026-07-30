@@ -1,4 +1,5 @@
 import { getRequestSupabaseClient, getRequestUser } from "../../../lib/request-user";
+import { containsUnsafeActiveContent } from "../../../lib/content-security";
 
 export async function GET(request: Request) {
   const user = await getRequestUser(request);
@@ -25,6 +26,9 @@ export async function POST(request: Request) {
   const body = (await request.json()) as { topic?: unknown; content?: unknown };
   if (typeof body.topic !== "string" || !body.topic.trim() || typeof body.content !== "string" || !body.content.trim()) {
     return Response.json({ error: "Raport musi zawierać temat i treść." }, { status: 400 });
+  }
+  if (containsUnsafeActiveContent(body.topic) || containsUnsafeActiveContent(body.content)) {
+    return Response.json({ error: "Raport zawiera niedozwolony aktywny kod lub znaczniki HTML." }, { status: 400 });
   }
 
   const { data, error } = await supabase

@@ -27,7 +27,7 @@ export const SECURITY_OUTPUT_MESSAGE =
 
 export type InputValidationResult =
   | { allowed: true; text: string }
-  | { allowed: false; text: string; reason: "message_too_long" | "suspicious_instruction" };
+  | { allowed: false; text: string; reason: "message_too_long" | "suspicious_instruction" | "unsafe_active_content" };
 
 export function normalizeSecurityText(text: string) {
   return text
@@ -49,10 +49,18 @@ export function validateChatInput(text: string): InputValidationResult {
     return { allowed: false, text: normalized, reason: "suspicious_instruction" };
   }
 
+  if (containsUnsafeActiveContent(normalized) || containsSuspiciousSqlInjection(normalized)) {
+    return { allowed: false, text: normalized, reason: "unsafe_active_content" };
+  }
+
   return { allowed: true, text: normalized };
 }
 
 export function containsSensitiveOutput(text: string) {
   const normalized = normalizeSecurityText(text);
-  return blockedOutputPatterns.some((pattern) => pattern.test(normalized));
+  return containsUnsafeActiveContent(normalized) || blockedOutputPatterns.some((pattern) => pattern.test(normalized));
 }
+import {
+  containsSuspiciousSqlInjection,
+  containsUnsafeActiveContent,
+} from "./content-security";

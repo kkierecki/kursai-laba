@@ -13,6 +13,7 @@ Uruchamiaj skrypty w Supabase SQL Editor dokładnie w tej kolejności:
 9. `009_add_webhook_events.sql`
 10. `010_enable_row_level_security.sql`
 11. `011_add_chat_security.sql`
+12. `012_reject_active_content.sql`
 
 Zakres migracji:
 
@@ -21,5 +22,6 @@ Zakres migracji:
 - `003` — lokalizacja biegacza do dopasowania warunków i terenu.
 - `004` — daty źródłowe metryk, potrzebne do bezpiecznego rozstrzygania konfliktów.
 - `011` — walidowane logi wiadomości oraz atomowy limit 50 wiadomości na godzinę na użytkownika.
+- `012` — blokada aktywnego HTML, CSS i JavaScript na poziomie API oraz bazy danych.
 
 Każda kolejna zmiana schematu powinna być nowym plikiem z kolejnym numerem — nie edytuj migracji wykonanych już na współdzielonym środowisku.
