@@ -1120,7 +1120,11 @@ export async function POST(req: Request) {
 
     const authenticatedUser = await getRequestUser(req, accessToken);
     if (!authenticatedUser) {
-      void requestLog.finish(401, { error: "authentication_required" });
+      void requestLog.finish(401, {
+        error: "authentication_required",
+        hasAuthorizationHeader: Boolean(req.headers.get("authorization")),
+        hasFallbackAccessToken: typeof accessToken === "string" && accessToken.length > 0,
+      });
       return createSecurityMessageResponse(
         "Sesja wygasła lub nie jesteś zalogowany. Zaloguj się ponownie.",
       );
