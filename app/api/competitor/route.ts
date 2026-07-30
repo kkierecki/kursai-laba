@@ -1,6 +1,7 @@
 import { google } from "@ai-sdk/google";
 import { convertToModelMessages, isStepCount, jsonSchema, streamText, tool, type UIMessage } from "ai";
 import { fetchWebPage, fetchWikipedia } from "../../../lib/agent-tools";
+import { getLlmRequestContext, recordApiUsage } from "../../../lib/api-usage";
 
 export const maxDuration = 90;
 
@@ -45,9 +46,11 @@ Linki źródłowe muszą być prawdziwymi adresami wykorzystanymi w analizie.`;
 
 export async function POST(request: Request) {
   try {
+    const usageContext = await getLlmRequestContext(request);
+    if ("error" in usageContext) return usageContext.error;
     const { messages }: { messages: UIMessage[] } = await request.json();
     const tools = process.env.ENABLE_SEARCH_GROUNDING === "true" ? { ...baseTools, google_search: google.tools.googleSearch({}) } : baseTools;
-    const result = streamText({ model: google("gemini-3.1-flash-lite"), system, messages: await convertToModelMessages(messages, { tools }), tools, stopWhen: isStepCount(10), temperature: 0.2 });
+    const result = streamText({ model: google("gemini-3.1-flash-lite"), system, messages: await convertToModelMessages(messages, { tools }), tools, stopWhen: isStepCount(10), temperature: 0.2, onFinish: ({ usage }) => { void recordApiUsage(usageContext.database, usageContext.user.id, usage, "gemini-3.1-flash-lite", "/api/competitor").catch(console.error); } });
     return result.toUIMessageStreamResponse({ sendSources: true });
   } catch (error) {
     console.error("competitor analysis error", error);

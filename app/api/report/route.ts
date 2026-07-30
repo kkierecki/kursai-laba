@@ -1,5 +1,6 @@
 import { google } from "@ai-sdk/google";
 import { convertToModelMessages, isStepCount, streamText, type UIMessage } from "ai";
+import { getLlmRequestContext, recordApiUsage } from "../../../lib/api-usage";
 
 export const maxDuration = 90;
 
@@ -42,6 +43,8 @@ Nie wymyślaj statystyk. Jeśli nie możesz potwierdzić danych, zaznacz ogranic
 
 export async function POST(request: Request) {
   try {
+    const usageContext = await getLlmRequestContext(request);
+    if ("error" in usageContext) return usageContext.error;
     const { messages }: { messages: UIMessage[] } = await request.json();
     const modelMessages = await convertToModelMessages(messages, { tools });
     const result = streamText({
@@ -51,6 +54,9 @@ export async function POST(request: Request) {
       tools,
       stopWhen: isStepCount(8),
       temperature: 0.2,
+      onFinish: ({ usage }) => {
+        void recordApiUsage(usageContext.database, usageContext.user.id, usage, "gemini-3.1-flash-lite", "/api/report").catch(console.error);
+      },
     });
     return result.toUIMessageStreamResponse({ sendSources: true });
   } catch (error) {

@@ -1,9 +1,9 @@
 import { google } from "@ai-sdk/google";
 import { convertToModelMessages, isStepCount, jsonSchema, streamText, tool, type UIMessage } from "ai";
-import { getRequestSupabaseClient, getRequestUser } from "../../../lib/request-user";
 import { getActiveRacePlans, saveRacePlan } from "../../../lib/race-plans";
 import { getRunnerContext } from "../../../lib/running-data";
 import { beginTechnicalRequest, logTechnical, summarizeMessages } from "../../../lib/technical-logger";
+import { getLlmRequestContext, recordApiUsage } from "../../../lib/api-usage";
 
 export const maxDuration = 90;
 
@@ -39,9 +39,11 @@ Odpowiadaj po polsku, konkretnie i wspierająco. Nie diagnozuj urazów; przy bó
 export async function POST(request: Request) {
   const requestLog = beginTechnicalRequest(request, "/api/race-plan");
   try {
+    const usageContext = await getLlmRequestContext(request);
+    if ("error" in usageContext) return usageContext.error;
     const { messages, selectedPlanId }: { messages: UIMessage[]; selectedPlanId?: string } = await request.json();
-    const user = await getRequestUser(request);
-    const database = user ? getRequestSupabaseClient(request) : null;
+    const user = usageContext.user;
+    const database = usageContext.database;
     const runnerContext = user
       ? await getRunnerContext(user.id, database ?? undefined)
       : { profile: null, goals: [], lastWorkout: null, lastRecovery: null, lastConversationAt: null };
@@ -91,6 +93,11 @@ export async function POST(request: Request) {
       system: `${system}\n\n## Dzisiejsza data\n${new Date().toISOString().slice(0, 10)}\n\n## Bieżący kontekst biegacza\n${JSON.stringify(runnerContext)}\n\n## Zapisane aktywne plany\n${JSON.stringify(activePlans)}\n\n## Wybrany plan do rozmowy\n${JSON.stringify(selectedPlan)}`,
       messages: modelMessages, tools, stopWhen: isStepCount(16), maxOutputTokens: 3200, temperature: 0.2,
       onError: ({ error }) => void logTechnical("ERROR", "ai.stream.error", { route: "/api/race-plan", requestId: requestLog.requestId, error }),
+      onFinish: ({ usage }) => {
+        void recordApiUsage(database, user.id, usage, "gemini-3.1-flash-lite", "/api/race-plan").catch((error) =>
+          logTechnical("ERROR", "api-usage.write.failed", { route: "/api/race-plan", requestId: requestLog.requestId, error }),
+        );
+      },
     });
     const response = result.toUIMessageStreamResponse({ sendSources: true });
     void requestLog.finish(200, { model: "gemini-3.1-flash-lite", messageSummary: summarizeMessages(messages) });

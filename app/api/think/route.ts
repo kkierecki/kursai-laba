@@ -5,6 +5,7 @@ import {
   logTechnical,
   summarizeMessages,
 } from "../../../lib/technical-logger";
+import { getLlmRequestContext, recordApiUsage } from "../../../lib/api-usage";
 
 export const maxDuration = 30;
 
@@ -42,6 +43,8 @@ export async function POST(req: Request) {
   const requestLog = beginTechnicalRequest(req, "/api/think");
 
   try {
+    const usageContext = await getLlmRequestContext(req);
+    if ("error" in usageContext) return usageContext.error;
     const { messages }: { messages: UIMessage[] } = await req.json();
     const result = streamText({
       model: google("gemini-3.1-flash-lite"),
@@ -59,6 +62,9 @@ export async function POST(req: Request) {
         });
       },
       onFinish: ({ finishReason, usage }) => {
+        void recordApiUsage(usageContext.database, usageContext.user.id, usage, "gemini-3.1-flash-lite", "/api/think").catch((error) =>
+          logTechnical("ERROR", "api-usage.write.failed", { route: "/api/think", requestId: requestLog.requestId, error }),
+        );
         void logTechnical("INFO", "ai.stream.finished", {
           route: "/api/think",
           requestId: requestLog.requestId,
