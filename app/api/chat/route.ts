@@ -585,19 +585,19 @@ async function consumeMessageSlot(
 
 function createOutputSecurityTransform(requestId?: string) {
   return ({ stopStream }: { stopStream: () => void }) => {
-    const bufferedTextParts: Array<{ type: "text-start" | "text-delta" | "text-end"; id: string; delta?: string }> = [];
+    const bufferedTextParts: Array<{ type: "text-start" | "text-delta" | "text-end"; id: string; text?: string }> = [];
     let completeText = "";
 
     return new TransformStream<any, any>({
-      transform(chunk, controller) {
+      transform(chunk: { type: string; id?: string; text?: string }, controller) {
         if (chunk.type === "text-start" || chunk.type === "text-end") {
           if (chunk.id) bufferedTextParts.push({ type: chunk.type, id: chunk.id });
           return;
         }
 
         if (chunk.type === "text-delta") {
-          completeText += chunk.delta ?? "";
-          if (chunk.id) bufferedTextParts.push({ type: "text-delta", id: chunk.id, delta: chunk.delta ?? "" });
+          completeText += chunk.text ?? "";
+          if (chunk.id) bufferedTextParts.push({ type: "text-delta", id: chunk.id, text: chunk.text ?? "" });
           return;
         }
 
@@ -606,7 +606,7 @@ function createOutputSecurityTransform(requestId?: string) {
             stopStream();
             const id = bufferedTextParts[0]?.id ?? "security-filter";
             controller.enqueue({ type: "text-start", id });
-            controller.enqueue({ type: "text-delta", id, delta: SECURITY_OUTPUT_MESSAGE });
+            controller.enqueue({ type: "text-delta", id, text: SECURITY_OUTPUT_MESSAGE });
             controller.enqueue({ type: "text-end", id });
             void logTechnical("WARN", "security.output.blocked", {
               route: "/api/chat",
