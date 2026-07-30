@@ -8,6 +8,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [ready, setReady] = useState(false);
+  const [authenticated, setAuthenticated] = useState(false);
   const isLoginPage = pathname === "/login";
 
   useEffect(() => {
@@ -22,11 +23,13 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       } else if (data.user && isLoginPage) {
         router.replace("/");
       }
+      setAuthenticated(Boolean(data.user));
       setReady(true);
     }
 
     void checkSession();
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthenticated(Boolean(session));
       if (!session && !isLoginPage) router.replace("/login");
     });
 
@@ -36,7 +39,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     };
   }, [isLoginPage, router]);
 
-  if (!ready) {
+  if (!ready || (!isLoginPage && !authenticated)) {
     return <main className="auth-loading">Sprawdzam sesję…</main>;
   }
 
