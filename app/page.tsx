@@ -215,8 +215,8 @@ export function ChatHome() {
 
     async function restoreConversation() {
       if (!authUserId) return;
-      // Every visit to /chat begins a fresh coaching session. Previous
-      // conversations remain in History, but are not restored automatically.
+      setIsRestoring(true);
+      setPersistenceError(null);
       conversationGenerationRef.current += 1;
       conversationIdRef.current = null;
       conversationTitleRef.current = null;
@@ -226,32 +226,21 @@ export function ChatHome() {
       setMessageModes({});
       setMessageModels({});
       setInput("");
-      setPersistenceError(null);
-      setIsRestoring(false);
-      return;
-
-      /* Legacy restore flow intentionally disabled: entering /chat starts fresh.
-      setIsRestoring(true);
-      setPersistenceError(null);
 
       try {
         const requestedConversationId = new URLSearchParams(
           window.location.search,
         ).get("conversation");
-        const conversationRequest = requestedConversationId
-          ? supabase
-              .from("conversations")
-              .select("id,title")
-              .eq("id", requestedConversationId)
-              .eq("user_id", authUserId)
-              .maybeSingle()
-          : supabase
-              .from("conversations")
-              .select("id,title")
-              .eq("user_id", authUserId)
-              .order("updated_at", { ascending: false })
-              .limit(1)
-              .maybeSingle();
+        if (!requestedConversationId) {
+          return;
+        }
+
+        const conversationRequest = supabase
+          .from("conversations")
+          .select("id,title")
+          .eq("id", requestedConversationId)
+          .eq("user_id", authUserId)
+          .maybeSingle();
         const { data: conversation, error: conversationError } =
           await conversationRequest;
 
@@ -309,7 +298,6 @@ export function ChatHome() {
           setIsRestoring(false);
         }
       }
-      */
     }
 
     void restoreConversation();
