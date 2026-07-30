@@ -1106,6 +1106,7 @@ export async function POST(req: Request) {
       model,
       userId: _rawUserId,
       trainingId,
+      accessToken,
     }: {
       image?: RequestImage;
       images?: RequestImage[];
@@ -1114,16 +1115,17 @@ export async function POST(req: Request) {
       model?: unknown;
       userId?: unknown;
       trainingId?: unknown;
+      accessToken?: unknown;
     } = await req.json();
 
-    const authenticatedUser = await getRequestUser(req);
+    const authenticatedUser = await getRequestUser(req, accessToken);
     if (!authenticatedUser) {
       void requestLog.finish(401, { error: "authentication_required" });
       return createSecurityMessageResponse(
         "Sesja wygasła lub nie jesteś zalogowany. Zaloguj się ponownie.",
       );
     }
-    const database = getRequestSupabaseClient(req);
+    const database = getRequestSupabaseClient(req, accessToken);
     if (!database) {
       void requestLog.finish(401, { error: "database_session_required" });
       return createSecurityMessageResponse(

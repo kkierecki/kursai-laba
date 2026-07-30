@@ -144,6 +144,7 @@ export function ChatHome() {
               model: aiModelRef.current,
               userId: userIdRef.current,
               trainingId: trainingIdRef.current,
+              accessToken: session?.access_token,
             },
           };
         },
