@@ -1118,11 +1118,17 @@ export async function POST(req: Request) {
 
     const authenticatedUser = await getRequestUser(req);
     if (!authenticatedUser) {
-      return Response.json({ error: "Wymagane logowanie." }, { status: 401 });
+      void requestLog.finish(401, { error: "authentication_required" });
+      return createSecurityMessageResponse(
+        "Sesja wygasła lub nie jesteś zalogowany. Zaloguj się ponownie.",
+      );
     }
     const database = getRequestSupabaseClient(req);
     if (!database) {
-      return Response.json({ error: "Wymagane logowanie." }, { status: 401 });
+      void requestLog.finish(401, { error: "database_session_required" });
+      return createSecurityMessageResponse(
+        "Sesja wygasła lub nie jesteś zalogowany. Zaloguj się ponownie.",
+      );
     }
     const selectedMode = getMode(mode);
     const selectedModel = getAiModel(model);
@@ -1234,6 +1240,8 @@ export async function POST(req: Request) {
     return response;
   } catch (error) {
     await requestLog.fail(error);
-    throw error;
+    return createSecurityMessageResponse(
+      "Nie udało się przetworzyć wiadomości. Spróbuj ponownie za moment.",
+    );
   }
 }
