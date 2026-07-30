@@ -1,6 +1,6 @@
 import { google } from "@ai-sdk/google";
 import { convertToModelMessages, isStepCount, jsonSchema, streamText, tool, type UIMessage } from "ai";
-import { getRequestUser } from "../../../lib/request-user";
+import { getRequestSupabaseClient, getRequestUser } from "../../../lib/request-user";
 import { getActiveRacePlans, saveRacePlan } from "../../../lib/race-plans";
 import { getRunnerContext } from "../../../lib/running-data";
 import { beginTechnicalRequest, logTechnical, summarizeMessages } from "../../../lib/technical-logger";
@@ -41,14 +41,16 @@ export async function POST(request: Request) {
   try {
     const { messages, selectedPlanId }: { messages: UIMessage[]; selectedPlanId?: string } = await request.json();
     const user = await getRequestUser(request);
+    const database = user ? getRequestSupabaseClient(request) : null;
     const runnerContext = user
-      ? await getRunnerContext(user.id)
+      ? await getRunnerContext(user.id, database ?? undefined)
       : { profile: null, goals: [], lastWorkout: null, lastRecovery: null, lastConversationAt: null };
     let activePlans: unknown[] = [];
-    let planStorageAvailable = Boolean(user);
+    let planStorageAvailable = Boolean(user && database);
     if (user) {
       try {
-        activePlans = await getActiveRacePlans(user.id);
+        if (!database) throw new Error("Brak tokenu sesji.");
+        activePlans = await getActiveRacePlans(user.id, database);
       } catch (error) {
         planStorageAvailable = false;
         void logTechnical("WARN", "race-plan.storage.unavailable", {
@@ -71,7 +73,8 @@ export async function POST(request: Request) {
           if (!user) return { saved: false, error: "Zapis planu wymaga zalogowanej sesji. Lista biegów pozostaje dostępna." };
           if (!planStorageAvailable) return { saved: false, error: "Zapis planu wymaga uruchomienia migracji 006_add_race_plans.sql w Supabase." };
           try {
-            return await saveRacePlan(user.id, input);
+            if (!database) return { saved: false, error: "Zapis planu wymaga zalogowanej sesji." };
+            return await saveRacePlan(user.id, input, database);
           } catch (error) {
             void logTechnical("WARN", "race-plan.save.unavailable", { route: "/api/race-plan", requestId: requestLog.requestId, error });
             return { saved: false, error: "Nie udało się zapisać planu. Sprawdź migrację 006_add_race_plans.sql w Supabase." };

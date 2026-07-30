@@ -104,8 +104,8 @@ export async function getRunnerContext(userId: string, database: SupabaseClient 
   };
 }
 
-export async function getHistoricalTrainingMemory(userId: string) {
-  const { data, error } = await supabase
+export async function getHistoricalTrainingMemory(userId: string, database: SupabaseClient = supabase) {
+  const { data, error } = await database
     .from("messages")
     .select("created_at,role,content,conversations!inner(user_id)")
     .eq("conversations.user_id", userId)
@@ -123,8 +123,8 @@ export async function getHistoricalTrainingMemory(userId: string) {
     }));
 }
 
-export async function backfillScreenVerifiedWorkout(userId: string) {
-  const history = await getHistoricalTrainingMemory(userId);
+export async function backfillScreenVerifiedWorkout(userId: string, database: SupabaseClient = supabase) {
+  const history = await getHistoricalTrainingMemory(userId, database);
   const screenSummary = [...history].reverse().find((message) =>
     message.role === "assistant"
     && /wykonałeś.*\d+[,.]\d+\s*km/i.test(message.content)
@@ -147,7 +147,7 @@ export async function backfillScreenVerifiedWorkout(userId: string) {
   const distanceM = Math.round(Number(distance.replace(",", ".")) * 1000);
   const durationSeconds = Number(minutes) * 60 + Number(seconds);
 
-  const { data: existing, error: existingError } = await supabase
+  const { data: existing, error: existingError } = await database
     .from("workouts")
     .select("id,performed_on")
     .eq("user_id", userId)
@@ -168,10 +168,10 @@ export async function backfillScreenVerifiedWorkout(userId: string) {
     averageHr: Number(averageHr),
     unstructuredNotes: "Zapis automatyczny z historycznej analizy screena.",
     extractionConfidence: "screen_verified",
-  });
+  }, database);
 }
 
-export async function saveRunningGoal(userId: string, input: RunningGoalInput) {
+export async function saveRunningGoal(userId: string, input: RunningGoalInput, database: SupabaseClient = supabase) {
   const goal = compact({
     user_id: userId,
     title: input.title.trim(),
@@ -181,7 +181,7 @@ export async function saveRunningGoal(userId: string, input: RunningGoalInput) {
     target_unit: input.targetUnit?.trim(),
     target_date: input.targetDate,
   });
-  const { data: existing, error: findError } = await supabase
+  const { data: existing, error: findError } = await database
     .from("running_goals")
     .select("id")
     .eq("user_id", userId)
@@ -191,14 +191,14 @@ export async function saveRunningGoal(userId: string, input: RunningGoalInput) {
   if (findError) throw findError;
 
   const { data, error } = existing
-    ? await supabase.from("running_goals").update({ ...goal, updated_at: new Date().toISOString() }).eq("id", existing.id).select("id,title").single()
-    : await supabase.from("running_goals").insert(goal).select("id,title").single();
+    ? await database.from("running_goals").update({ ...goal, updated_at: new Date().toISOString() }).eq("id", existing.id).select("id,title").single()
+    : await database.from("running_goals").insert(goal).select("id,title").single();
   if (error) throw error;
   return { saved: true, ...data };
 }
 
-export async function saveAthleteLocation(userId: string, homeLocation: string) {
-  const { error } = await supabase.from("athlete_profiles").upsert({
+export async function saveAthleteLocation(userId: string, homeLocation: string, database: SupabaseClient = supabase) {
+  const { error } = await database.from("athlete_profiles").upsert({
     user_id: userId,
     home_location: homeLocation.trim(),
     updated_at: new Date().toISOString(),
@@ -208,7 +208,7 @@ export async function saveAthleteLocation(userId: string, homeLocation: string) 
     // Lokalizacja pozostaje trwała w profilu użytkownika i dashboard ma
     // dla niej odczyt zapasowy, aż do uruchomienia migracji 003.
     if (error.message.includes("home_location")) {
-      await saveUserPreference(userId, "home_location", homeLocation.trim());
+      await saveUserPreference(userId, "home_location", homeLocation.trim(), database);
       return { saved: true, homeLocation: homeLocation.trim(), storage: "user_preferences" };
     }
     throw error;
@@ -216,13 +216,13 @@ export async function saveAthleteLocation(userId: string, homeLocation: string) 
   return { saved: true, homeLocation: homeLocation.trim() };
 }
 
-export async function saveAthleteProfile(userId: string, input: AthleteProfileInput) {
+export async function saveAthleteProfile(userId: string, input: AthleteProfileInput, database: SupabaseClient = supabase) {
   const hasProfileData = Object.entries(input).some(([key, value]) =>
     !["observedOn", "confirmed"].includes(key) && value !== undefined,
   );
   if (!hasProfileData) return { saved: false, error: "Brak parametrów profilu do zapisania." };
   const normalizedSex = normalizeSex(input.sex);
-  const { data: existing, error: loadError } = await supabase
+  const { data: existing, error: loadError } = await database
     .from("athlete_profiles")
     .select("birth_year,weight_kg,height_cm,hr_max,lactate_threshold_hr,lactate_threshold_pace_seconds,vo2max,typical_cadence_spm")
     .eq("user_id", userId)
@@ -231,7 +231,7 @@ export async function saveAthleteProfile(userId: string, input: AthleteProfileIn
 
   // Wdrożenia sprzed migracji 004 nadal zapisują profil; tracą jedynie
   // automatyczne porównanie obiektywnych dat pomiarów do czasu jej uruchomienia.
-  const metricDates = await supabase
+  const metricDates = await database
     .from("athlete_profiles")
     .select("metric_observed_at")
     .eq("user_id", userId)
@@ -286,15 +286,15 @@ export async function saveAthleteProfile(userId: string, input: AthleteProfileIn
     ...(input.notes !== undefined ? ["notes"] : []),
   ];
   if (savedFields.length === 0) return { saved: false, requiresConfirmation: conflicts.length > 0, conflicts, savedFields };
-  const { error } = await supabase.from("athlete_profiles").upsert(supportsMetricDates
+  const { error } = await database.from("athlete_profiles").upsert(supportsMetricDates
     ? { ...profile, metric_observed_at: nextObservedAt }
     : profile);
   if (error) throw error;
   return { saved: true, savedFields, requiresConfirmation: conflicts.length > 0, conflicts };
 }
 
-export async function saveWorkout(userId: string, input: WorkoutInput) {
-  const { data, error } = await supabase.from("workouts").insert(compact({
+export async function saveWorkout(userId: string, input: WorkoutInput, database: SupabaseClient = supabase) {
+  const { data, error } = await database.from("workouts").insert(compact({
     user_id: userId,
     performed_on: input.performedOn,
     summary: input.summary.trim(),
@@ -316,7 +316,7 @@ export async function saveWorkout(userId: string, input: WorkoutInput) {
   return { saved: true, ...data };
 }
 
-export async function updateWorkout(userId: string, workoutId: string, input: WorkoutUpdateInput) {
+export async function updateWorkout(userId: string, workoutId: string, input: WorkoutUpdateInput, database: SupabaseClient = supabase) {
   const update = compact({
     performed_on: input.performedOn,
     summary: input.summary?.trim(),
@@ -335,7 +335,7 @@ export async function updateWorkout(userId: string, workoutId: string, input: Wo
     updated_at: new Date().toISOString(),
   });
   if (Object.keys(update).length === 1) return { saved: false, error: "Brak danych treningu do zmiany." };
-  const { data, error } = await supabase.from("workouts")
+  const { data, error } = await database.from("workouts")
     .update(update).eq("id", workoutId).eq("user_id", userId)
     .select("id,performed_on,summary").maybeSingle();
   if (error) throw error;
@@ -343,14 +343,14 @@ export async function updateWorkout(userId: string, workoutId: string, input: Wo
   return { saved: true, ...data };
 }
 
-export async function deleteWorkout(userId: string, workoutId: string) {
-  const { data, error } = await supabase.from("workouts")
+export async function deleteWorkout(userId: string, workoutId: string, database: SupabaseClient = supabase) {
+  const { data, error } = await database.from("workouts")
     .delete().eq("id", workoutId).eq("user_id", userId).select("id").maybeSingle();
   if (error) throw error;
   return data ? { deleted: true, id: data.id } : { deleted: false, error: "Nie znaleziono wskazanego treningu." };
 }
 
-export async function saveRecoveryLog(userId: string, input: RecoveryInput) {
+export async function saveRecoveryLog(userId: string, input: RecoveryInput, database: SupabaseClient = supabase) {
   const hasRecoveryData = Object.entries(input).some(([key, value]) => key !== "loggedOn" && value !== undefined);
   if (!hasRecoveryData) return { saved: false, error: "Brak danych regeneracji do zapisania." };
   if (input.sleepQuality !== undefined) {
@@ -361,7 +361,7 @@ export async function saveRecoveryLog(userId: string, input: RecoveryInput) {
       return { saved: false, error: "Wynik jakości snu musi mieścić się w podanej skali." };
     }
   }
-  const { data, error } = await supabase.from("recovery_logs").upsert(compact({
+  const { data, error } = await database.from("recovery_logs").upsert(compact({
     user_id: userId,
     logged_on: input.loggedOn,
     sleep_hours: input.sleepHours,

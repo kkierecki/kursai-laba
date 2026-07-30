@@ -7,6 +7,11 @@ Uruchamiaj skrypty w Supabase SQL Editor dokładnie w tej kolejności:
 3. `003_add_athlete_home_location.sql`
 4. `004_add_metric_observation_dates.sql`
 5. `006_add_race_plans.sql`
+6. `007_allow_manual_race_plans.sql`
+7. `007_add_sleep_quality_scale.sql`
+8. `008_add_runner_briefings.sql`
+9. `009_add_webhook_events.sql`
+10. `010_enable_row_level_security.sql`
 
 Zakres migracji:
 

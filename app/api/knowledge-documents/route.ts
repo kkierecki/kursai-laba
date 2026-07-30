@@ -1,9 +1,10 @@
-import { supabase } from "../../../lib/supabase";
-import { getRequestUser } from "../../../lib/request-user";
+import { getRequestSupabaseClient, getRequestUser } from "../../../lib/request-user";
 
 export async function GET(request: Request) {
   const user = await getRequestUser(request);
   if (!user) return Response.json({ error: "Wymagane logowanie." }, { status: 401 });
+  const supabase = getRequestSupabaseClient(request);
+  if (!supabase) return Response.json({ error: "Wymagane logowanie." }, { status: 401 });
   const title = new URL(request.url).searchParams.get("title");
 
   if (title) {
@@ -44,6 +45,8 @@ export async function GET(request: Request) {
 export async function DELETE(request: Request) {
   const user = await getRequestUser(request);
   if (!user) return Response.json({ error: "Wymagane logowanie." }, { status: 401 });
+  const supabase = getRequestSupabaseClient(request);
+  if (!supabase) return Response.json({ error: "Wymagane logowanie." }, { status: 401 });
   const { title } = (await request.json()) as { title?: unknown };
   if (typeof title !== "string" || !title) return Response.json({ error: "Brak tytułu." }, { status: 400 });
   const { error } = await supabase.from("documents").delete().eq("title", title).eq("user_id", user.id);

@@ -1,4 +1,4 @@
-import { supabase } from "./supabase";
+import { createSupabaseUserClient, supabase } from "./supabase";
 
 export async function getRequestUser(request: Request) {
   const authorization = request.headers.get("authorization");
@@ -7,4 +7,10 @@ export async function getRequestUser(request: Request) {
 
   const { data, error } = await supabase.auth.getUser(token);
   return error ? null : data.user;
+}
+
+export function getRequestSupabaseClient(request: Request) {
+  const authorization = request.headers.get("authorization");
+  const token = authorization?.startsWith("Bearer ") ? authorization.slice(7) : null;
+  return token ? createSupabaseUserClient(token) : null;
 }

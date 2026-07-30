@@ -1,9 +1,8 @@
 import { generateText, isStepCount } from "ai";
 import { google } from "@ai-sdk/google";
 import { fetchWeather } from "../../../../lib/agent-tools";
-import { getRequestUser } from "../../../../lib/request-user";
+import { getRequestSupabaseClient, getRequestUser } from "../../../../lib/request-user";
 import { getRunnerContext } from "../../../../lib/running-data";
-import { supabase } from "../../../../lib/supabase";
 import { createSupabaseAdminClient } from "../../../../lib/supabase-admin";
 import { beginTechnicalRequest, logTechnical } from "../../../../lib/technical-logger";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -142,7 +141,13 @@ export async function GET(request: Request) {
       return response;
     }
 
-    const generated = await generateBriefingForUser(user.id, supabase);
+    const database = getRequestSupabaseClient(request);
+    if (!database) {
+      const response = Response.json({ error: "Zaloguj się, aby wygenerować swój briefing." }, { status: 401 });
+      void requestLog.finish(401);
+      return response;
+    }
+    const generated = await generateBriefingForUser(user.id, database);
     const response = Response.json({ success: true, saved: true, cached: !generated.generated, ...generated });
     void requestLog.finish(200, { model: "gemini-3.1-flash-lite", saved: true, cached: !generated.generated, source: "user" });
     return response;

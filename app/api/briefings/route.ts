@@ -1,11 +1,12 @@
-import { getRequestUser } from "../../../lib/request-user";
-import { supabase } from "../../../lib/supabase";
+import { getRequestSupabaseClient, getRequestUser } from "../../../lib/request-user";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const user = await getRequestUser(request);
   if (!user) return Response.json({ error: "Wymagane logowanie." }, { status: 401 });
+  const supabase = getRequestSupabaseClient(request);
+  if (!supabase) return Response.json({ error: "Wymagane logowanie." }, { status: 401 });
 
   const { data, error } = await supabase
     .from("runner_briefings")

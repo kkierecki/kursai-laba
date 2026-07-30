@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type UserProfile = {
   id: string;
@@ -33,8 +34,8 @@ function toUserProfile(row: UserProfileRow): UserProfile {
   };
 }
 
-export async function ensureUserProfile(userId: string) {
-  const { data, error } = await supabase
+export async function ensureUserProfile(userId: string, database: SupabaseClient = supabase) {
+  const { data, error } = await database
     .from("user_profiles")
     .select("id,name,preferences")
     .eq("id", userId)
@@ -48,7 +49,7 @@ export async function ensureUserProfile(userId: string) {
     return toUserProfile(data as UserProfileRow);
   }
 
-  const { data: created, error: createError } = await supabase
+  const { data: created, error: createError } = await database
     .from("user_profiles")
     .insert({ id: userId, preferences: {} })
     .select("id,name,preferences")
@@ -61,14 +62,14 @@ export async function ensureUserProfile(userId: string) {
   return toUserProfile(created as UserProfileRow);
 }
 
-export async function saveUserName(userId: string, name: string) {
+export async function saveUserName(userId: string, name: string, database: SupabaseClient = supabase) {
   const normalizedName = name.trim().replace(/\s+/g, " ").slice(0, 80);
 
   if (!normalizedName) {
     return { saved: false, error: "Imię nie może być puste." };
   }
 
-  const { error } = await supabase
+  const { error } = await database
     .from("user_profiles")
     .update({ name: normalizedName })
     .eq("id", userId);
@@ -84,6 +85,7 @@ export async function saveUserPreference(
   userId: string,
   key: string,
   value: string,
+  database: SupabaseClient = supabase,
 ) {
   const normalizedKey = key.trim().toLowerCase().replace(/\s+/g, "_").slice(0, 50);
   const normalizedValue = value.trim().slice(0, 200);
@@ -99,13 +101,13 @@ export async function saveUserPreference(
     return { saved: false, error: "Wartość preferencji nie może być pusta." };
   }
 
-  const profile = await ensureUserProfile(userId);
+  const profile = await ensureUserProfile(userId, database);
   const preferences = {
     ...profile.preferences,
     [normalizedKey]: normalizedValue,
   };
 
-  const { error } = await supabase
+  const { error } = await database
     .from("user_profiles")
     .update({ preferences })
     .eq("id", userId);

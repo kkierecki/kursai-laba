@@ -88,7 +88,7 @@ export default function ConversationDetailPage() {
             ) : messages.map((message) => (
               <article className={`history-message ${message.role}`} key={message.id}>
                 <div className="history-message-meta">
-                  <span>{message.role === "user" ? "Ty" : "Agent"}</span>
+                  <span>{message.role === "user" ? "Ty" : "Trener RUNLAB"}</span>
                   <time dateTime={message.created_at}>
                     {new Intl.DateTimeFormat("pl-PL", { hour: "2-digit", minute: "2-digit" }).format(new Date(message.created_at))}
                   </time>

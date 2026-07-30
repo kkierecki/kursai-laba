@@ -1671,6 +1671,115 @@ main h1:not(.briefings-title) { display: flex; align-items: center; gap: 9px; fo
 .page-title-icon { display: grid; width: 25px; height: 25px; flex: 0 0 25px; place-items: center; border: 1px solid #f0d7cb; border-radius: 6px; background: #fff7f3; color: var(--run-orange); }
 .page-title-icon-svg { width: 15px; height: 15px; }
 
+/* Conversation detail: a readable, clearly authored running-coach thread. */
+.conversation-detail .history-header {
+  align-items: flex-start;
+  padding: 28px 30px 24px;
+}
+
+.conversation-detail .history-header > div:first-child {
+  min-width: 0;
+}
+
+.conversation-detail .history-header h1 {
+  max-width: 700px;
+  line-height: 1.18;
+}
+
+.conversation-detail .conversation-actions {
+  flex: 0 0 auto;
+  padding-top: 1px;
+}
+
+.history-messages {
+  gap: 18px;
+  min-height: 390px;
+  background: #fcfcfb;
+  padding: 28px 30px 32px;
+}
+
+.history-message {
+  position: relative;
+  width: min(86%, 760px);
+  gap: 9px;
+  border-color: var(--run-line);
+  background: #fff;
+  box-shadow: 0 3px 9px rgba(38, 33, 30, .035);
+  color: #312f2d;
+  padding: 15px 17px 16px;
+}
+
+.history-message::before {
+  position: absolute;
+  top: 15px;
+  bottom: 15px;
+  left: -1px;
+  width: 3px;
+  border-radius: 3px 0 0 3px;
+  background: #f1c3ad;
+  content: "";
+}
+
+.history-message.user {
+  border-color: var(--run-orange);
+  background: var(--run-orange);
+  box-shadow: 0 5px 12px rgba(252, 76, 2, .16);
+  color: #fff;
+}
+
+.history-message.user::before {
+  display: none;
+}
+
+.history-message-meta {
+  align-items: center;
+  color: #7a7470;
+  font-size: .76rem;
+  font-weight: 560;
+  letter-spacing: .01em;
+}
+
+.history-message.user .history-message-meta {
+  color: rgba(255, 255, 255, .82);
+}
+
+.history-message p {
+  color: inherit;
+  font-size: .96rem;
+  line-height: 1.62;
+}
+
+.history-empty-message {
+  align-self: center;
+  color: var(--run-muted);
+  padding: 38px 16px;
+}
+
+@media (max-width: 720px) {
+  .conversation-detail .history-header {
+    gap: 16px;
+    padding: 22px 18px 20px;
+  }
+
+  .conversation-detail .conversation-actions {
+    width: 100%;
+  }
+
+  .conversation-detail .conversation-actions a {
+    flex: 1 1 180px;
+  }
+
+  .history-messages {
+    min-height: 300px;
+    padding: 20px 16px 24px;
+  }
+
+  .history-message {
+    width: min(94%, 760px);
+    padding: 14px 15px;
+  }
+}
+
 /* Old emoji controls receive the same lightweight SVG cue as the rest of RUNLAB. */
 .legacy-button-icon::before { display: inline-block; width: 15px; height: 15px; margin-right: 7px; vertical-align: -2px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23fc4c02' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h12'/%3E%3Cpath d='m13 6 6 6-6 6'/%3E%3C/svg%3E") center/contain no-repeat; content: ""; }
 

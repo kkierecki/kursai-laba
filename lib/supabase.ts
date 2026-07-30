@@ -10,3 +10,12 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+// Server routes must forward the verified user JWT to PostgREST. Without this,
+// RLS sees the request as `anon` even after the route has authenticated it.
+export function createSupabaseUserClient(accessToken: string) {
+  return createClient(supabaseUrl!, supabaseAnonKey!, {
+    global: { headers: { Authorization: `Bearer ${accessToken}` } },
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+}

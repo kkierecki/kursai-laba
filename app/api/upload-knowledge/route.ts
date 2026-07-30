@@ -1,6 +1,5 @@
 import { splitIntoChunks } from "../../../lib/chunking";
-import { supabase } from "../../../lib/supabase";
-import { getRequestUser } from "../../../lib/request-user";
+import { getRequestSupabaseClient, getRequestUser } from "../../../lib/request-user";
 
 const encoder = new TextEncoder();
 function event(controller: ReadableStreamDefaultController<Uint8Array>, value: object) { controller.enqueue(encoder.encode(`${JSON.stringify(value)}\n`)); }
@@ -15,6 +14,8 @@ async function createEmbedding(text: string) {
 export async function POST(request: Request) {
   const user = await getRequestUser(request);
   if (!user) return Response.json({ error: "Wymagane logowanie." }, { status: 401 });
+  const supabase = getRequestSupabaseClient(request);
+  if (!supabase) return Response.json({ error: "Wymagane logowanie." }, { status: 401 });
   const { title, content } = (await request.json()) as { title?: unknown; content?: unknown };
   if (typeof title !== "string" || !title.trim() || typeof content !== "string" || !content.trim()) return Response.json({ error: "Podaj tytuł i treść dokumentu." }, { status: 400 });
   const chunks = splitIntoChunks(content); const documentTitle = title.trim(); const addedAt = new Date().toISOString();

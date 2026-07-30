@@ -1,9 +1,10 @@
-import { getRequestUser } from "../../../lib/request-user";
-import { supabase } from "../../../lib/supabase";
+import { getRequestSupabaseClient, getRequestUser } from "../../../lib/request-user";
 
 export async function GET(request: Request) {
   const user = await getRequestUser(request);
   if (!user) return Response.json({ error: "Wymagane logowanie." }, { status: 401 });
+  const supabase = getRequestSupabaseClient(request);
+  if (!supabase) return Response.json({ error: "Wymagane logowanie." }, { status: 401 });
 
   const { data, error } = await supabase
     .from("reports")
@@ -18,6 +19,8 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await getRequestUser(request);
   if (!user) return Response.json({ error: "Wymagane logowanie." }, { status: 401 });
+  const supabase = getRequestSupabaseClient(request);
+  if (!supabase) return Response.json({ error: "Wymagane logowanie." }, { status: 401 });
 
   const body = (await request.json()) as { topic?: unknown; content?: unknown };
   if (typeof body.topic !== "string" || !body.topic.trim() || typeof body.content !== "string" || !body.content.trim()) {
@@ -37,6 +40,8 @@ export async function POST(request: Request) {
 export async function DELETE(request: Request) {
   const user = await getRequestUser(request);
   if (!user) return Response.json({ error: "Wymagane logowanie." }, { status: 401 });
+  const supabase = getRequestSupabaseClient(request);
+  if (!supabase) return Response.json({ error: "Wymagane logowanie." }, { status: 401 });
 
   const { id } = (await request.json()) as { id?: unknown };
   if (typeof id !== "string" || !id) return Response.json({ error: "Brak identyfikatora raportu." }, { status: 400 });

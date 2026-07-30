@@ -34,8 +34,8 @@ import {
   deleteWorkout,
 } from "../../../lib/running-data";
 import { fetchWeather, searchKnowledge, searchKnowledgeTool } from "../../../lib/agent-tools";
-import { getRequestUser } from "../../../lib/request-user";
-import { supabase } from "../../../lib/supabase";
+import { getRequestSupabaseClient, getRequestUser } from "../../../lib/request-user";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const maxDuration = 90;
 
@@ -256,7 +256,7 @@ const chatTools = {
   }),
 };
 
-function createChatTools(userId: string | null) {
+function createChatTools(userId: string | null, database?: SupabaseClient) {
   const tools =
     process.env.ENABLE_SEARCH_GROUNDING === "true"
       ? { ...chatTools, google_search: google.tools.googleSearch({}) }
@@ -271,7 +271,7 @@ function createChatTools(userId: string | null) {
     searchKnowledge: tool({
       description: "Wyszukuje informacje wyłącznie w prywatnej bazie wiedzy zalogowanego użytkownika.",
       inputSchema: jsonSchema<{ query: string }>({ type: "object", properties: { query: { type: "string" } }, required: ["query"], additionalProperties: false }),
-      execute: async ({ query }) => searchKnowledge(query, userId),
+      execute: async ({ query }) => searchKnowledge(query, userId, database),
     }),
     saveUserName: tool({
       description:
@@ -289,7 +289,7 @@ function createChatTools(userId: string | null) {
       }),
       execute: async ({ name }) => {
         try {
-          return await saveUserName(userId, name);
+          return await saveUserName(userId, name, database);
         } catch {
           return { saved: false, error: "Nie udało się zapisać imienia." };
         }
@@ -315,7 +315,7 @@ function createChatTools(userId: string | null) {
       }),
       execute: async ({ key, value }) => {
         try {
-          return await saveUserPreference(userId, key, value);
+          return await saveUserPreference(userId, key, value, database);
         } catch {
           return { saved: false, error: "Nie udało się zapisać preferencji." };
         }
@@ -331,7 +331,7 @@ function createChatTools(userId: string | null) {
       }),
       execute: async (input) => {
         try {
-          return await saveRunningGoal(userId, input);
+          return await saveRunningGoal(userId, input, database);
         } catch (error) {
           void logTechnical("ERROR", "runner.goal.save.failed", { route: "/api/chat", error });
           return { saved: false, error: "Nie udało się zapisać celu biegowego." };
@@ -343,7 +343,7 @@ function createChatTools(userId: string | null) {
       inputSchema: jsonSchema<{ homeLocation: string }>({ type: "object", properties: { homeLocation: { type: "string" } }, required: ["homeLocation"], additionalProperties: false }),
       execute: async ({ homeLocation }) => {
         try {
-          return await saveAthleteLocation(userId, homeLocation);
+          return await saveAthleteLocation(userId, homeLocation, database);
         } catch {
           return { saved: false, error: "Nie udało się zapisać lokalizacji." };
         }
@@ -358,7 +358,7 @@ function createChatTools(userId: string | null) {
       }),
       execute: async (input) => {
         try {
-          return await saveAthleteProfile(userId, input);
+          return await saveAthleteProfile(userId, input, database);
         } catch (error) {
           void logTechnical("ERROR", "runner.profile.save.failed", { route: "/api/chat", error });
           return { saved: false, error: "Nie udało się zapisać profilu biegacza." };
@@ -375,7 +375,7 @@ function createChatTools(userId: string | null) {
       }),
       execute: async (input) => {
         try {
-          return await saveWorkout(userId, input);
+          return await saveWorkout(userId, input, database);
         } catch (error) {
           void logTechnical("ERROR", "runner.workout.save.failed", { route: "/api/chat", error });
           return { saved: false, error: "Nie udało się zapisać treningu." };
@@ -390,7 +390,7 @@ function createChatTools(userId: string | null) {
         required: ["workoutId"], additionalProperties: false,
       }),
       execute: async ({ workoutId, ...input }) => {
-        try { return await updateWorkout(userId, workoutId, input); }
+        try { return await updateWorkout(userId, workoutId, input, database); }
         catch (error) { void logTechnical("ERROR", "runner.workout.update.failed", { route: "/api/chat", error }); return { saved: false, error: "Nie udało się zmienić treningu." }; }
       },
     }),
@@ -398,7 +398,7 @@ function createChatTools(userId: string | null) {
       description: "Usuwa trening tylko po jednoznacznym poleceniu użytkownika, dla workoutId z kontekstu edycji.",
       inputSchema: jsonSchema<{ workoutId: string }>({ type: "object", properties: { workoutId: { type: "string" } }, required: ["workoutId"], additionalProperties: false }),
       execute: async ({ workoutId }) => {
-        try { return await deleteWorkout(userId, workoutId); }
+        try { return await deleteWorkout(userId, workoutId, database); }
         catch (error) { void logTechnical("ERROR", "runner.workout.delete.failed", { route: "/api/chat", error }); return { deleted: false, error: "Nie udało się usunąć treningu." }; }
       },
     }),
@@ -412,7 +412,7 @@ function createChatTools(userId: string | null) {
       }),
       execute: async (input) => {
         try {
-          return await saveRecoveryLog(userId, input);
+          return await saveRecoveryLog(userId, input, database);
         } catch (error) {
           void logTechnical("ERROR", "runner.recovery.save.failed", { route: "/api/chat", error });
           return { saved: false, error: "Nie udało się zapisać regeneracji." };
@@ -453,9 +453,9 @@ To stały biegacz: ${profile.name}. W nowej rozmowie przywitaj go po imieniu i z
   }`;
 }
 
-async function createTrainingContextPrompt(userId: string) {
+async function createTrainingContextPrompt(userId: string, database: SupabaseClient) {
   try {
-    const context = await getRunnerContext(userId);
+    const context = await getRunnerContext(userId, database);
     const today = new Intl.DateTimeFormat("en-CA", {
       timeZone: "Europe/Warsaw",
     }).format(new Date());
@@ -479,9 +479,9 @@ function isProfileBackfillCommand(text: string) {
   return normalized.startsWith("/uzupelnij-profil") || normalized.startsWith("/uzpelnij-profil");
 }
 
-async function createHistoricalBackfillPrompt(userId: string) {
+async function createHistoricalBackfillPrompt(userId: string, database: SupabaseClient) {
   try {
-    const history = await getHistoricalTrainingMemory(userId);
+    const history = await getHistoricalTrainingMemory(userId, database);
     return `## HISTORIA DO UZUPEŁNIENIA PROFILU
 Użytkownik wywołał /uzupelnij-profil. Przejrzyj poniższą historię i zapisz przez narzędzia tylko dane jednoznacznie podane przez użytkownika albo wyraźnie oznaczone w odpowiedzi asystenta jako odczytane ze screena. Dla każdej znalezionej wartości MUSISZ użyć właściwego narzędzia zapisu; nie wystarczy jej wymienić w odpowiedzi. Historyczny trening ze zweryfikowanego screena jest zapisywany deterministycznie przez serwer przed Twoją odpowiedzią: jego wynik przekazany niżej jest nadrzędny. Nigdy nie próbuj zapisywać go ponownie przez saveWorkout i nigdy nie twierdź, że do jego zapisu wymagany jest czas w sekundach.
 Nie traktuj daty wiadomości jako daty treningu ani daty pomiaru. Nie zapisuj przypuszczeń, rekomendacji ani wartości przykładowych. Jeśli wartość koliduje z profilem, respektuj mechanizm potwierdzenia narzędzia. Na końcu podaj listę zapisanych rekordów i danych, których nie udało się zapisać.
@@ -1010,15 +1010,19 @@ export async function POST(req: Request) {
     if (!authenticatedUser) {
       return Response.json({ error: "Wymagane logowanie." }, { status: 401 });
     }
+    const database = getRequestSupabaseClient(req);
+    if (!database) {
+      return Response.json({ error: "Wymagane logowanie." }, { status: 401 });
+    }
     const selectedMode = getMode(mode);
     const selectedModel = getAiModel(model);
     const userId = authenticatedUser.id;
-    const requestTools = createChatTools(userId);
+    const requestTools = createChatTools(userId, database);
     let profile: UserProfile | null = null;
 
     if (userId) {
       try {
-        profile = await ensureUserProfile(userId);
+        profile = await ensureUserProfile(userId, database);
       } catch (profileError) {
         void logTechnical("WARN", "user.profile.load.failed", {
           route: "/api/chat",
@@ -1033,9 +1037,9 @@ export async function POST(req: Request) {
     const baseSystem = isBusinessCommand(lastUserText)
       ? `${systemPrompts[selectedMode]}\n\n${businessCommandPrompt}`
       : systemPrompts[selectedMode];
-    const trainingContext = await createTrainingContextPrompt(userId);
+    const trainingContext = await createTrainingContextPrompt(userId, database);
     const selectedTraining = typeof trainingId === "string"
-      ? await supabase.from("workouts").select("id,performed_on,summary,training_type,distance_m,duration_seconds,average_pace_seconds,average_hr,max_hr,average_cadence_spm,elevation_gain_m,rpe,unstructured_notes").eq("id", trainingId).eq("user_id", userId).maybeSingle()
+      ? await database.from("workouts").select("id,performed_on,summary,training_type,distance_m,duration_seconds,average_pace_seconds,average_hr,max_hr,average_cadence_spm,elevation_gain_m,rpe,unstructured_notes").eq("id", trainingId).eq("user_id", userId).maybeSingle()
       : { data: null, error: null };
     const editingContext = selectedTraining.data
       ? `\n\n## EDYCJA WYBRANEGO TRENINGU\nUżytkownik edytuje wyłącznie ten rekord: ${JSON.stringify(selectedTraining.data)}. Gdy prosi o zmianę, użyj updateWorkout z workoutId=${selectedTraining.data.id} i tylko podanymi polami. Gdy prosi o usunięcie, najpierw poproś o jednoznaczne potwierdzenie, a po jego otrzymaniu użyj deleteWorkout.`
@@ -1044,14 +1048,14 @@ export async function POST(req: Request) {
     let workoutBackfillResult: unknown = null;
     if (isProfileBackfill) {
       try {
-        workoutBackfillResult = await backfillScreenVerifiedWorkout(userId);
+        workoutBackfillResult = await backfillScreenVerifiedWorkout(userId, database);
         void logTechnical("INFO", "runner.workout.backfill.completed", { route: "/api/chat", requestId: requestLog.requestId, result: workoutBackfillResult });
       } catch (error) {
         void logTechnical("ERROR", "runner.workout.backfill.failed", { route: "/api/chat", requestId: requestLog.requestId, error });
       }
     }
     const historicalBackfill = isProfileBackfill
-      ? `\n\n${await createHistoricalBackfillPrompt(userId)}\n\nWynik deterministycznego zapisu treningu ze zweryfikowanego screena: ${JSON.stringify(workoutBackfillResult)}. Uwzględnij go dokładnie w odpowiedzi.`
+      ? `\n\n${await createHistoricalBackfillPrompt(userId, database)}\n\nWynik deterministycznego zapisu treningu ze zweryfikowanego screena: ${JSON.stringify(workoutBackfillResult)}. Uwzględnij go dokładnie w odpowiedzi.`
       : "";
     const system = `${baseSystem}\n\n${createPersonalizationPrompt(profile)}\n\n${trainingContext}${editingContext}${historicalBackfill}`;
     const modelMessages = await convertToModelMessages(requestMessages, {
