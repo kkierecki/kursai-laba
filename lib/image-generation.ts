@@ -6,6 +6,7 @@ const imageTimeoutMs = 30000;
 export type GeneratedImageResult = {
   image: string;
   text: string;
+  usage: { inputTokens: number; outputTokens: number };
 };
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number) {
@@ -53,6 +54,10 @@ export async function generateAiImage(
         }>;
       };
     }>;
+    usageMetadata?: {
+      promptTokenCount?: number;
+      candidatesTokenCount?: number;
+    };
   };
 
   const parts = response.candidates?.[0]?.content?.parts ?? [];
@@ -72,5 +77,9 @@ export async function generateAiImage(
   return {
     image: `data:${mimeType};base64,${imagePart.inlineData.data}`,
     text: text || "Obraz wygenerowany.",
+    usage: {
+      inputTokens: Number.isSafeInteger(response.usageMetadata?.promptTokenCount) ? response.usageMetadata!.promptTokenCount! : 0,
+      outputTokens: Number.isSafeInteger(response.usageMetadata?.candidatesTokenCount) ? response.usageMetadata!.candidatesTokenCount! : 0,
+    },
   };
 }

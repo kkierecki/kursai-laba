@@ -5,6 +5,7 @@ import { getRequestSupabaseClient, getRequestUser } from "../../../../lib/reques
 import { getRunnerContext } from "../../../../lib/running-data";
 import { createSupabaseAdminClient } from "../../../../lib/supabase-admin";
 import { beginTechnicalRequest, logTechnical } from "../../../../lib/technical-logger";
+import { recordApiUsage } from "../../../../lib/api-usage";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const maxDuration = 90;
@@ -69,6 +70,11 @@ async function generateBriefingForUser(userId: string, database: SupabaseClient)
     maxOutputTokens: 1800,
     temperature: 0.1,
   });
+  try {
+    await recordApiUsage(database, userId, result.usage, "gemini-3.1-flash-lite", "/api/cron/morning");
+  } catch (error) {
+    void logTechnical("ERROR", "api-usage.write.failed", { route: "/api/cron/morning", userId, error });
+  }
 
   const content = result.text.trim();
   if (!content) throw new Error("Model nie zwrócił treści briefingu.");

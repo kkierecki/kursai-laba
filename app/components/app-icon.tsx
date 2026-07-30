@@ -4,7 +4,7 @@ export type AppIconName =
   | "home" | "chat" | "history" | "activity" | "target" | "briefing"
   | "grid" | "brain" | "book" | "align" | "search" | "image" | "eye"
   | "bot" | "refresh" | "plane" | "chart" | "mail" | "report"
-  | "buildings" | "library";
+  | "buildings" | "library" | "settings";
 
 const paths: Record<AppIconName, ReactNode> = {
   home: <path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1V10Z" />,
@@ -28,6 +28,7 @@ const paths: Record<AppIconName, ReactNode> = {
   report: <><path d="M6 3h9l3 3v15H6z" /><path d="M15 3v4h4M9 17v-4M12 17V9M15 17v-6" /></>,
   buildings: <><path d="M4 21V5h10v16M14 10h6v11M7 9h.01M11 9h.01M7 13h.01M11 13h.01M7 17h.01M11 17h.01M17 14h.01M17 18h.01" /></>,
   library: <><path d="M4 4h4v16H4zM10 4h4v16h-4zM16 4h4v16h-4z" /><path d="m3 20 18 0" /></>,
+  settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.12 2.12-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.04 1.56v.08h-3v-.08A1.7 1.7 0 0 0 10.66 18.7a1.7 1.7 0 0 0-1.88.34l-.06.06L6.6 16.98l.06-.06A1.7 1.7 0 0 0 7 15.04a1.7 1.7 0 0 0-1.56-1.04h-.08v-3h.08A1.7 1.7 0 0 0 7 9.96a1.7 1.7 0 0 0-.34-1.88L6.6 8.02 8.72 5.9l.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 11.7 4.74v-.08h3v.08a1.7 1.7 0 0 0 1.04 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.12 2.12-.06.06A1.7 1.7 0 0 0 19.4 9.96 1.7 1.7 0 0 0 20.96 11h.08v3h-.08A1.7 1.7 0 0 0 19.4 15Z" /></>,
 };
 
 export function AppIcon({ name, className = "nav-icon" }: { name: AppIconName; className?: string }) {

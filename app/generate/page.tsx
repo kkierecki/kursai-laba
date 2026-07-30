@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import { supabase } from "../../lib/supabase";
 
 const examples = [
   "Wygeneruj techniczny szkic trzymasztowego barku z opisanymi elementami takielunku",
@@ -33,9 +34,11 @@ export default function GeneratePage() {
     setLastPrompt(text.trim());
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error("Sesja wygasła. Zaloguj się ponownie.");
       const response = await fetch("/api/generate-image", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", Authorization: `Bearer ${session.access_token}` },
         body: JSON.stringify({ prompt: text.trim() }),
       });
       const data = await response.json();

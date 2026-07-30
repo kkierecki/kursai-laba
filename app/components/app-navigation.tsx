@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { AppIcon, type AppIconName } from "./app-icon";
 
@@ -54,6 +54,38 @@ export function AppNavigation() {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [otherOpen, setOtherOpen] = useState(() => otherLinks.some((link) => pathname.startsWith(link.href)));
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    async function checkAdmin(accessToken?: string) {
+      if (!accessToken) {
+        if (active) setIsAdmin(false);
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/admin/security", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+          cache: "no-store",
+        });
+        if (active) setIsAdmin(response.ok);
+      } catch {
+        if (active) setIsAdmin(false);
+      }
+    }
+
+    void supabase.auth.getSession().then(({ data: { session } }) => checkAdmin(session?.access_token));
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+      void checkAdmin(session?.access_token);
+    });
+
+    return () => {
+      active = false;
+      subscription.subscription.unsubscribe();
+    };
+  }, []);
 
   if (pathname === "/login") return null;
 
@@ -68,6 +100,7 @@ export function AppNavigation() {
         <Link className="mobile-brand" href="/" aria-label="Trener Biegania AI — strona główna"><span aria-hidden="true" /> RUNLAB</Link>
         <button aria-expanded={menuOpen} aria-label="Otwórz menu" className="nav-toggle" onClick={() => setMenuOpen((value) => !value)} type="button"><NavIcon name="grid" /></button>
       </header>
+      {isAdmin && <Link aria-label="Panel bezpieczeństwa" className="desktop-admin-security-link admin-security-link" href="/admin/security" title="Panel bezpieczeństwa"><NavIcon name="settings" /></Link>}
       {menuOpen && <button aria-label="Zamknij menu" className="nav-scrim" onClick={() => setMenuOpen(false)} type="button" />}
       <nav className={`app-nav ${menuOpen ? "open" : ""}`} aria-label="Główna nawigacja">
         <Link className="nav-brand" href="/" onClick={() => setMenuOpen(false)}><span aria-hidden="true" className="brand-mark" /><span>RUN<span>LAB</span><small>Twój trener biegania</small></span></Link>

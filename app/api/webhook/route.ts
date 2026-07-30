@@ -3,6 +3,7 @@ import { google } from "@ai-sdk/google";
 import { createSupabaseAdminClient } from "../../../lib/supabase-admin";
 import { beginTechnicalRequest, logTechnical } from "../../../lib/technical-logger";
 import { containsUnsafeJsonContent } from "../../../lib/content-security";
+import { recordApiUsage } from "../../../lib/api-usage";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -99,6 +100,11 @@ export async function POST(request: Request) {
         temperature: 0.1,
       });
       analysis = result.text.trim() || analysis;
+      try {
+        await recordApiUsage(admin, payload.userId, result.usage, "gemini-3.1-flash-lite", "/api/webhook");
+      } catch (usageError) {
+        void logTechnical("ERROR", "api-usage.write.failed", { route: "/api/webhook", requestId: requestLog.requestId, error: usageError });
+      }
       if (!result.text.trim()) status = "analysis_failed";
     } catch (error) {
       status = "analysis_failed";

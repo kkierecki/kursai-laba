@@ -37,6 +37,7 @@ import {
 } from "../../../lib/running-data";
 import { fetchWeather, searchKnowledge, searchKnowledgeTool } from "../../../lib/agent-tools";
 import { getRequestSupabaseClient, getRequestUser } from "../../../lib/request-user";
+import { enforceDailyTokenLimit, recordApiUsage } from "../../../lib/api-usage";
 import {
   containsSensitiveOutput,
   SECURITY_BLOCKED_MESSAGE,
@@ -265,7 +266,7 @@ const chatTools = {
   }),
 };
 
-function createChatTools(userId: string | null, database?: SupabaseClient) {
+function createChatTools(userId: string | null, database?: SupabaseClient, requestId?: string) {
   const tools =
     process.env.ENABLE_SEARCH_GROUNDING === "true"
       ? { ...chatTools, google_search: google.tools.googleSearch({}) }
@@ -277,6 +278,24 @@ function createChatTools(userId: string | null, database?: SupabaseClient) {
 
   return {
     ...tools,
+    generateImage: tool({
+      description: "Generuje obraz na podstawie opisu.",
+      inputSchema: jsonSchema<GenerateImageInput>({
+        type: "object",
+        properties: { prompt: { type: "string", description: "Opis obrazu." } },
+        required: ["prompt"],
+        additionalProperties: false,
+      }),
+      execute: async ({ prompt }) => {
+        const generated = await generateAiImage(prompt);
+        await recordApiUsage(database!, userId, generated.usage, "gemini-3.1-flash-lite-image", "/api/chat");
+        return generated;
+      },
+      toModelOutput: ({ output }) => ({
+        type: "text",
+        value: `Obraz zostal wygenerowany. ${output.text}`,
+      }),
+    }),
     searchKnowledge: tool({
       description: "Wyszukuje informacje wyłącznie w prywatnej bazie wiedzy zalogowanego użytkownika.",
       inputSchema: jsonSchema<{ query: string }>({ type: "object", properties: { query: { type: "string" } }, required: ["query"], additionalProperties: false }),
@@ -752,20 +771,24 @@ async function readWebPage(url: string) {
 
 function createModelResponse({
   abortSignal,
+  database,
   messages,
   model,
   system,
   tools,
   requestId,
+  userId,
   forceToolUse = false,
   forceBackfillWorkout = false,
 }: {
   abortSignal?: AbortSignal;
+  database: SupabaseClient;
   messages: ModelMessage[];
   model: string;
   requestId?: string;
   system: string;
   tools: ReturnType<typeof createChatTools>;
+  userId: string;
   forceToolUse?: boolean;
   forceBackfillWorkout?: boolean;
 }) {
@@ -831,6 +854,9 @@ function createModelResponse({
       });
     },
     onFinish: ({ finishReason, usage }) => {
+      void recordApiUsage(database, userId, usage, model, "/api/chat").catch((error) =>
+        logTechnical("ERROR", "api-usage.write.failed", { route: "/api/chat", requestId, error }),
+      );
       void logTechnical("INFO", "ai.stream.finished", {
         route: "/api/chat",
         requestId,
@@ -940,17 +966,21 @@ function hasPrimaryProgress(streamText: string) {
 }
 
 function createFlashStreamWithFallback({
+  database,
   messages,
   requestId,
   system,
   tools,
+  userId,
   forceToolUse,
   forceBackfillWorkout,
 }: {
+  database: SupabaseClient;
   messages: ModelMessage[];
   requestId?: string;
   system: string;
   tools: ReturnType<typeof createChatTools>;
+  userId: string;
   forceToolUse?: boolean;
   forceBackfillWorkout?: boolean;
 }) {
@@ -965,11 +995,13 @@ function createFlashStreamWithFallback({
       try {
         const primaryResponse = createModelResponse({
           abortSignal: primaryAbortController.signal,
+          database,
           messages,
           model: flashModel,
           requestId,
           system,
           tools,
+          userId,
           forceToolUse,
           forceBackfillWorkout,
         });
@@ -1031,11 +1063,13 @@ function createFlashStreamWithFallback({
 
         try {
           const fallbackResponse = createModelResponse({
+            database,
             messages,
             model: flashFallbackModel,
             requestId,
             system,
             tools,
+            userId,
             forceToolUse,
             forceBackfillWorkout,
           });
@@ -1064,34 +1098,40 @@ function createFlashStreamWithFallback({
 
 function createSelectedModelStream({
   aiModel,
+  database,
   messages,
   requestId,
   system,
   tools,
+  userId,
   forceToolUse,
   forceBackfillWorkout,
 }: {
   aiModel: AiModel;
+  database: SupabaseClient;
   messages: ModelMessage[];
   requestId?: string;
   system: string;
   tools: ReturnType<typeof createChatTools>;
+  userId: string;
   forceToolUse?: boolean;
   forceBackfillWorkout?: boolean;
 }) {
   if (aiModel === "pro") {
     return createModelResponse({
+      database,
       messages,
       model: proModel,
       requestId,
       system,
       tools,
+      userId,
       forceToolUse,
       forceBackfillWorkout,
     }).body;
   }
 
-  return createFlashStreamWithFallback({ messages, requestId, system, tools, forceToolUse, forceBackfillWorkout });
+  return createFlashStreamWithFallback({ database, messages, requestId, system, tools, userId, forceToolUse, forceBackfillWorkout });
 }
 
 export async function POST(req: Request) {
@@ -1139,7 +1179,7 @@ export async function POST(req: Request) {
     const selectedMode = getMode(mode);
     const selectedModel = getAiModel(model);
     const userId = authenticatedUser.id;
-    const requestTools = createChatTools(userId, database);
+    const requestTools = createChatTools(userId, database, requestLog.requestId);
     let profile: UserProfile | null = null;
 
     if (userId) {
@@ -1188,6 +1228,23 @@ export async function POST(req: Request) {
       });
       return createSecurityMessageResponse(error);
     }
+    try {
+      if (!(await enforceDailyTokenLimit(database, userId))) {
+        void requestLog.finish(429, { security: "daily_token_limit" });
+        return createSecurityMessageResponse(
+          "Dzienny limit tokenów (10 tys.) został wyczerpany. Wróć jutro.",
+        );
+      }
+    } catch (error) {
+      void logTechnical("ERROR", "api-usage.limit-check.failed", {
+        route: "/api/chat",
+        requestId: requestLog.requestId,
+        error,
+      });
+      return createSecurityMessageResponse(
+        "Usługa kontroli limitu jest chwilowo niedostępna. Spróbuj ponownie za moment.",
+      );
+    }
     const baseSystem = isBusinessCommand(lastUserText)
       ? `${systemPrompts[selectedMode]}\n\n${businessCommandPrompt}`
       : systemPrompts[selectedMode];
@@ -1217,10 +1274,12 @@ export async function POST(req: Request) {
     });
     const stream = createSelectedModelStream({
       aiModel: selectedModel,
+      database,
       messages: modelMessages,
       requestId: requestLog.requestId,
       system,
       tools: requestTools,
+      userId,
       forceToolUse: (images?.length ?? (image ? 1 : 0)) > 0,
       forceBackfillWorkout: false,
     });
