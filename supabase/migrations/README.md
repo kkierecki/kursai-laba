@@ -12,6 +12,7 @@ Uruchamiaj skrypty w Supabase SQL Editor dokładnie w tej kolejności:
 8. `008_add_runner_briefings.sql`
 9. `009_add_webhook_events.sql`
 10. `010_enable_row_level_security.sql`
+11. `011_add_chat_security.sql`
 
 Zakres migracji:
 
@@ -19,5 +20,6 @@ Zakres migracji:
 - `002` — profil biegacza, strefy tętna, cele, treningi i regeneracja;
 - `003` — lokalizacja biegacza do dopasowania warunków i terenu.
 - `004` — daty źródłowe metryk, potrzebne do bezpiecznego rozstrzygania konfliktów.
+- `011` — walidowane logi wiadomości oraz atomowy limit 50 wiadomości na godzinę na użytkownika.
 
 Każda kolejna zmiana schematu powinna być nowym plikiem z kolejnym numerem — nie edytuj migracji wykonanych już na współdzielonym środowisku.

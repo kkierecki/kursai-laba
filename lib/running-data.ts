@@ -172,29 +172,47 @@ export async function backfillScreenVerifiedWorkout(userId: string, database: Su
 }
 
 export async function saveRunningGoal(userId: string, input: RunningGoalInput, database: SupabaseClient = supabase) {
-  const goal = compact({
-    user_id: userId,
-    title: input.title.trim(),
-    description: input.description?.trim(),
-    target_metric: input.targetMetric?.trim(),
-    target_value: input.targetValue,
-    target_unit: input.targetUnit?.trim(),
-    target_date: input.targetDate,
-  });
-  const { data: existing, error: findError } = await database
-    .from("running_goals")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("status", "active")
-    .ilike("title", input.title.trim())
-    .maybeSingle();
-  if (findError) throw findError;
+  const { data, error } = await database.rpc("replace_running_goal", {
+    p_user_id: userId,
+    p_title: input.title.trim(),
+    p_description: input.description?.trim() ?? null,
+    p_target_metric: input.targetMetric?.trim() ?? null,
+    p_target_value: input.targetValue ?? null,
+    p_target_unit: input.targetUnit?.trim() ?? null,
+    p_target_date: input.targetDate ?? null,
+  }).single();
+  if (!error && data) {
+    return { saved: true, ...(data as { id: string; title: string }) };
+  }
 
-  const { data, error } = existing
-    ? await database.from("running_goals").update({ ...goal, updated_at: new Date().toISOString() }).eq("id", existing.id).select("id,title").single()
-    : await database.from("running_goals").insert(goal).select("id,title").single();
-  if (error) throw error;
-  return { saved: true, ...data };
+  // Umożliwia działanie aplikacji przed ręcznym uruchomieniem migracji 012.
+  // Po migracji używana jest funkcja SQL, która wykonuje całą zamianę atomowo.
+  if (!error?.message.includes("replace_running_goal")) {
+    throw error ?? new Error("Nie udało się odczytać zapisanego celu.");
+  }
+
+  const { error: cancelError } = await database
+    .from("running_goals")
+    .update({ status: "cancelled", updated_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .eq("status", "active");
+  if (cancelError) throw cancelError;
+
+  const { data: createdGoal, error: createError } = await database
+    .from("running_goals")
+    .insert(compact({
+      user_id: userId,
+      title: input.title.trim(),
+      description: input.description?.trim(),
+      target_metric: input.targetMetric?.trim(),
+      target_value: input.targetValue,
+      target_unit: input.targetUnit?.trim(),
+      target_date: input.targetDate,
+    }))
+    .select("id,title")
+    .single();
+  if (createError) throw createError;
+  return { saved: true, ...createdGoal };
 }
 
 export async function saveAthleteLocation(userId: string, homeLocation: string, database: SupabaseClient = supabase) {

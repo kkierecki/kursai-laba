@@ -193,7 +193,7 @@ export default function HistoryPage() {
           <div className="history-list">
             {filteredConversations.map((conversation) => (
               <article className="history-card" key={conversation.id}>
-                <Link className="history-card-link" href={`/history/${conversation.id}`}>
+                <Link className="history-card-link" href={`/chat?conversation=${conversation.id}`}>
                   <div className="history-card-topline">
                     <h2>{conversation.title?.trim() || "Nowa rozmowa"}</h2>
                     <time dateTime={conversation.updated_at}>

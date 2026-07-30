@@ -35,6 +35,13 @@ import {
 } from "../../../lib/running-data";
 import { fetchWeather, searchKnowledge, searchKnowledgeTool } from "../../../lib/agent-tools";
 import { getRequestSupabaseClient, getRequestUser } from "../../../lib/request-user";
+import {
+  containsSensitiveOutput,
+  SECURITY_BLOCKED_MESSAGE,
+  SECURITY_OUTPUT_MESSAGE,
+  normalizeSecurityText,
+  validateChatInput,
+} from "../../../lib/chat-security";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const maxDuration = 90;
@@ -322,7 +329,7 @@ function createChatTools(userId: string | null, database?: SupabaseClient) {
       },
     }),
     saveRunningGoal: tool({
-      description: "Zapisuje opisowy, trwały cel biegacza. Użyj wyłącznie, gdy użytkownik wyraźnie poda cel albo potwierdzi jego zapis.",
+      description: "Zapisuje jeden aktualny, opisowy cel biegacza. Nowy cel zastępuje poprzedni aktywny cel. Użyj wyłącznie, gdy użytkownik wyraźnie poda cel albo potwierdzi jego zapis.",
       inputSchema: jsonSchema<{ title: string; description?: string; targetMetric?: string; targetValue?: number; targetUnit?: string; targetDate?: string }>({
         type: "object",
         properties: { title: { type: "string" }, description: { type: "string" }, targetMetric: { type: "string" }, targetValue: { type: "number" }, targetUnit: { type: "string" }, targetDate: { type: "string", description: "Data YYYY-MM-DD, tylko gdy użytkownik ją podał." } },
@@ -532,6 +539,88 @@ function getLastUserText(messages: UIMessage[]) {
   return lastUserMessage ? getMessageText(lastUserMessage) : "";
 }
 
+function sanitizeLastUserMessage(messages: UIMessage[]) {
+  const nextMessages = structuredClone(messages) as UIMessage[];
+  const lastUserMessage = [...nextMessages]
+    .reverse()
+    .find((message) => message.role === "user");
+
+  if (!lastUserMessage) return nextMessages;
+
+  const sanitizedText = normalizeSecurityText(getMessageText(lastUserMessage));
+  let textReplaced = false;
+  lastUserMessage.parts = lastUserMessage.parts.map((part) => {
+    if (part.type !== "text") return part;
+    if (textReplaced) return { ...part, text: "" };
+
+    textReplaced = true;
+    return { ...part, text: sanitizedText };
+  });
+
+  return nextMessages;
+}
+
+async function consumeMessageSlot(
+  database: SupabaseClient,
+  messageLength: number,
+  blocked: boolean,
+  blockReason: string | null,
+) {
+  const { data, error } = await database
+    .rpc("consume_chat_message_slot", {
+      p_message_length: messageLength,
+      p_blocked: blocked,
+      p_block_reason: blockReason,
+    })
+    .single();
+
+  if (error || !data) {
+    throw error ?? new Error("Nie otrzymano wyniku limitu wiadomości.");
+  }
+
+  return data as { allowed: boolean; retry_after_seconds: number };
+}
+
+function createOutputSecurityTransform(requestId?: string) {
+  return ({ stopStream }: { stopStream: () => void }) => {
+    const bufferedTextParts: Array<{ type: "text-start" | "text-delta" | "text-end"; id: string; delta?: string }> = [];
+    let completeText = "";
+
+    return new TransformStream<any, any>({
+      transform(chunk, controller) {
+        if (chunk.type === "text-start" || chunk.type === "text-end") {
+          if (chunk.id) bufferedTextParts.push({ type: chunk.type, id: chunk.id });
+          return;
+        }
+
+        if (chunk.type === "text-delta") {
+          completeText += chunk.delta ?? "";
+          if (chunk.id) bufferedTextParts.push({ type: "text-delta", id: chunk.id, delta: chunk.delta ?? "" });
+          return;
+        }
+
+        if (chunk.type === "finish") {
+          if (containsSensitiveOutput(completeText)) {
+            stopStream();
+            const id = bufferedTextParts[0]?.id ?? "security-filter";
+            controller.enqueue({ type: "text-start", id });
+            controller.enqueue({ type: "text-delta", id, delta: SECURITY_OUTPUT_MESSAGE });
+            controller.enqueue({ type: "text-end", id });
+            void logTechnical("WARN", "security.output.blocked", {
+              route: "/api/chat",
+              requestId,
+            });
+          } else {
+            for (const part of bufferedTextParts) controller.enqueue(part);
+          }
+        }
+
+        controller.enqueue(chunk);
+      },
+    });
+  };
+}
+
 function isBusinessCommand(text: string) {
   const normalized = text.trim().toLowerCase();
 
@@ -667,6 +756,7 @@ function createModelResponse({
     abortSignal,
     messages,
     tools,
+    experimental_transform: createOutputSecurityTransform(requestId),
     toolChoice: "auto",
     prepareStep: ({ stepNumber }) => {
       if (forceBackfillWorkout && (stepNumber === 0 || stepNumber === 1)) return { toolChoice: "required" };
@@ -1033,7 +1123,40 @@ export async function POST(req: Request) {
     }
 
     const requestMessages = attachImagesToLastUserMessage(messages, images ?? (image ? [image] : []));
-    const lastUserText = getLastUserText(requestMessages);
+    const sanitizedMessages = sanitizeLastUserMessage(requestMessages);
+    const lastUserText = getLastUserText(sanitizedMessages);
+    const inputValidation = validateChatInput(lastUserText);
+    let messageSlot: { allowed: boolean; retry_after_seconds: number };
+
+    try {
+      messageSlot = await consumeMessageSlot(
+        database,
+        inputValidation.text.length,
+        !inputValidation.allowed,
+        inputValidation.allowed ? null : inputValidation.reason,
+      );
+    } catch (error) {
+      void logTechnical("ERROR", "security.rate_limit.failed", {
+        route: "/api/chat",
+        requestId: requestLog.requestId,
+        error,
+      });
+      return Response.json(
+        { error: "Usługa bezpieczeństwa jest chwilowo niedostępna. Spróbuj ponownie za moment." },
+        { status: 503 },
+      );
+    }
+
+    if (!messageSlot.allowed) {
+      const error = inputValidation.allowed
+        ? `Osiągnąłeś limit wiadomości (50/h). Spróbuj za ${Math.max(1, Math.ceil(messageSlot.retry_after_seconds / 60))} min.`
+        : SECURITY_BLOCKED_MESSAGE;
+      void requestLog.finish(429, {
+        security: inputValidation.allowed ? "rate_limited" : inputValidation.reason,
+        retryAfterSeconds: messageSlot.retry_after_seconds,
+      });
+      return Response.json({ error }, { status: 429 });
+    }
     const baseSystem = isBusinessCommand(lastUserText)
       ? `${systemPrompts[selectedMode]}\n\n${businessCommandPrompt}`
       : systemPrompts[selectedMode];
@@ -1058,7 +1181,7 @@ export async function POST(req: Request) {
       ? `\n\n${await createHistoricalBackfillPrompt(userId, database)}\n\nWynik deterministycznego zapisu treningu ze zweryfikowanego screena: ${JSON.stringify(workoutBackfillResult)}. Uwzględnij go dokładnie w odpowiedzi.`
       : "";
     const system = `${baseSystem}\n\n${createPersonalizationPrompt(profile)}\n\n${trainingContext}${editingContext}${historicalBackfill}`;
-    const modelMessages = await convertToModelMessages(requestMessages, {
+    const modelMessages = await convertToModelMessages(sanitizedMessages, {
       tools: requestTools,
     });
     const stream = createSelectedModelStream({
@@ -1086,7 +1209,7 @@ export async function POST(req: Request) {
       model: selectedModel,
       mode: selectedMode,
       imageAttached: images?.length ?? (image ? 1 : 0),
-      messageSummary: summarizeMessages(requestMessages),
+      messageSummary: summarizeMessages(sanitizedMessages),
     });
 
     return response;
