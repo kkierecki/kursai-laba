@@ -10,6 +10,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isRegistering, setIsRegistering] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +40,29 @@ export default function LoginPage() {
     }
   }
 
+  async function requestPasswordReset() {
+    setError(null);
+    setMessage(null);
+
+    if (!email.trim()) {
+      setError("Podaj adres e-mail, na który mamy wysłać link.");
+      return;
+    }
+
+    setIsResetting(true);
+    try {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (resetError) throw resetError;
+      setMessage("Jeśli konto z tym adresem istnieje, wysłaliśmy link do ustawienia nowego hasła.");
+    } catch {
+      setMessage("Jeśli konto z tym adresem istnieje, wysłaliśmy link do ustawienia nowego hasła.");
+    } finally {
+      setIsResetting(false);
+    }
+  }
+
   return (
     <main className="login-shell">
       <form className="login-card" onSubmit={submit}>
@@ -49,8 +73,9 @@ export default function LoginPage() {
         <label>Hasło<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={isRegistering ? "new-password" : "current-password"} minLength={6} required /></label>
         {error && <p className="login-error" role="alert">{error}</p>}
         {message && <p className="login-message" role="status">{message}</p>}
-        <button disabled={isSubmitting} type="submit">{isSubmitting ? "Proszę czekać…" : isRegistering ? "Zarejestruj się" : "Zaloguj się"}</button>
-        <button className="login-switch" disabled={isSubmitting} onClick={() => { setIsRegistering((value) => !value); setError(null); setMessage(null); }} type="button">
+        <button disabled={isSubmitting || isResetting} type="submit">{isSubmitting ? "Proszę czekać…" : isRegistering ? "Zarejestruj się" : "Zaloguj się"}</button>
+        {!isRegistering && <button className="login-link" disabled={isSubmitting || isResetting} onClick={() => void requestPasswordReset()} type="button">{isResetting ? "Wysyłanie linku…" : "Nie pamiętasz hasła?"}</button>}
+        <button className="login-switch" disabled={isSubmitting || isResetting} onClick={() => { setIsRegistering((value) => !value); setError(null); setMessage(null); }} type="button">
           {isRegistering ? "Masz już konto? Zaloguj się" : "Nie masz konta? Zarejestruj się"}
         </button>
       </form>

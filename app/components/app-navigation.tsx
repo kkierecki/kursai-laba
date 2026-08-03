@@ -32,6 +32,7 @@ const otherLinks = [
   { href: "/report", label: "Raporty" },
   { href: "/competitor", label: "Konkurencja" },
   { href: "/upload", label: "Baza wiedzy" },
+  { href: "/account", label: "Ustawienia konta" },
 ];
 
 function NavIcon({ name }: { name: IconName }) {
@@ -43,7 +44,7 @@ function OtherNavIcon({ href }: { href: string }) {
     "/think": "brain", "/fewshot": "book", "/format": "align", "/search": "search",
     "/generate": "image", "/vision": "eye", "/agent": "bot", "/react": "refresh",
     "/travel": "plane", "/extract": "chart", "/email-triage": "mail", "/report": "report",
-    "/competitor": "buildings", "/upload": "library",
+    "/competitor": "buildings", "/upload": "library", "/account": "settings",
   };
 
   return <AppIcon name={icons[href] ?? "grid"} />;
@@ -87,7 +88,7 @@ export function AppNavigation() {
     };
   }, []);
 
-  if (pathname === "/login") return null;
+  if (pathname === "/login" || pathname === "/reset-password") return null;
 
   async function signOut() {
     await supabase.auth.signOut();
