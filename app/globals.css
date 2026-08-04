@@ -1638,6 +1638,14 @@ h1, h2, h3, strong { font-weight: 600; }
 .goal-details p { display: flex; align-items: center; gap: 7px; margin: 0; color: #65605d; font-size: .86rem; line-height: 1.45; }
 .goal-details .dashboard-icon { color: var(--run-orange); }
 .goal-details .goal-description { display: block; border-left: 2px solid #f5b79a; margin-top: 4px; padding-left: 10px; }
+.latest-workout-summary { margin-top: 28px; border-top: 1px solid var(--run-line); padding-top: 17px; }
+.latest-workout-heading { display: flex; align-items: center; gap: 7px; margin-bottom: 12px; color: #767676; font-size: .72rem; font-weight: 580; letter-spacing: .1em; text-transform: uppercase; }
+.latest-workout-heading .dashboard-icon { color: var(--run-orange); }
+.latest-workout-summary > strong { display: block; font-size: 1rem; }
+.latest-workout-summary > p:last-child { margin: 0; }
+.latest-workout-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.latest-workout-metrics .dashboard-metric { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; }
+.latest-workout-metrics .dashboard-metric dd { overflow-wrap: anywhere; }
 .workout-date { display: flex; align-items: center; gap: 6px; margin: 12px 0 16px !important; color: #716d6a !important; font-size: .86rem; }
 .workout-date .dashboard-icon { color: var(--run-orange); }
 .workout-metrics { display: grid; gap: 10px; margin: 0; }
@@ -1660,6 +1668,7 @@ h1, h2, h3, strong { font-weight: 560; }
 @media (max-width: 899px) {
   .runner-dashboard .profile-card { order: -1; }
   .dashboard-heading-icon { width: 22px; height: 22px; flex-basis: 22px; }
+  .latest-workout-metrics { grid-template-columns: 1fr; gap: 9px; }
 }
 
 /* Briefings use the same compact RUNLAB language as the dashboard. */
