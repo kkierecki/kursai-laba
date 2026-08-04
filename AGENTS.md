@@ -35,6 +35,10 @@ pnpm dev
 
 After **every** code, configuration, `.env.local`, or SQL migration change, restart the local development server before handing the result to the user. Do not rely on hot reload. Stop the current process first so that only one instance uses port 3000, then start `pnpm dev` again.
 
+### Local Supabase sessions
+
+When the app is tested locally against Supabase, run `pnpm dev` outside the Codex filesystem/network sandbox (with elevated execution approval). A sandboxed Next.js process can load the UI but may be unable to validate the browser JWT with Supabase, causing protected routes to incorrectly return `Wymagane jest zalogowanie.` even though the same account works in production. After restarting the elevated server, confirm the app responds at `http://localhost:3000` and retry the authenticated page in the browser.
+
 ```bash
 pnpm build
 ```

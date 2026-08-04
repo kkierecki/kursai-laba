@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../../../lib/supabase";
+import { AdminNavigation } from "../../components/admin-navigation";
 
 type UserUsage = { userId: string; email: string; todayTokens: number; weekTokens: number; dailyLimit: number; monthlyLimit: number; limitPercent: number };
 type Dashboard = {
@@ -85,7 +86,7 @@ export default function SecurityPage() {
   if (!dashboard) return <main className="security-shell"><section className="security-panel"><h1>🛡️ Panel bezpieczeństwa</h1><p>Wczytywanie danych…</p></section></main>;
 
   return <main className="security-shell"><section className="security-panel">
-    <header className="security-header"><div><h1>🛡️ Panel bezpieczeństwa</h1><p>Stan na {dateTime.format(new Date(dashboard.generatedAt))}</p></div></header>
+    <header className="security-header"><div><div className="admin-header-topline"><p className="admin-label">ADMINISTRACJA</p><AdminNavigation /></div><h1>🛡️ Panel bezpieczeństwa</h1><p>Stan na {dateTime.format(new Date(dashboard.generatedAt))}</p></div></header>
     <section className="security-section"><h2>📈 Statystyki</h2><div className="security-stats"><article><span>Tokeny dziś</span><strong>{number.format(dashboard.stats.todayTokens)}</strong></article><article><span>Tokeny w tym tygodniu</span><strong>{number.format(dashboard.stats.weekTokens)}</strong></article><article><span>Zablokowane wiadomości</span><strong>{number.format(dashboard.stats.blockedMessages)}</strong></article><article><span>Średnie zużycie / użytkownika</span><strong>{number.format(dashboard.stats.averageUsagePerUser)}</strong></article></div></section>
     <section className="security-section"><h2>🔴 Alerty</h2>{dashboard.alerts.length ? <ul className="security-alerts">{dashboard.alerts.map((alert, index) => <li key={`${alert.type}-${index}`}>{alertText(alert)}</li>)}</ul> : <p className="security-empty">Brak aktywnych alertów.</p>}</section>
     <section className="security-section"><h2>📊 Top 5 użytkowników po zużyciu</h2>{dashboard.topUsers.length ? <div className="security-table-wrap"><table><thead><tr><th>Użytkownik</th><th>Tokeny dziś</th><th>Tokeny w tygodniu</th><th>Limit dzienny</th></tr></thead><tbody>{dashboard.topUsers.map((row) => <tr key={row.userId}><td>{row.email}</td><td>{number.format(row.todayTokens)}</td><td>{number.format(row.weekTokens)}</td><td>{row.limitPercent}%</td></tr>)}</tbody></table></div> : <p className="security-empty">Brak użycia API w tym tygodniu.</p>}</section>
