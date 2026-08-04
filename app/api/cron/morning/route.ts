@@ -6,6 +6,7 @@ import { getRunnerContext } from "../../../../lib/running-data";
 import { createSupabaseAdminClient } from "../../../../lib/supabase-admin";
 import { beginTechnicalRequest, logTechnical } from "../../../../lib/technical-logger";
 import { recordApiUsage } from "../../../../lib/api-usage";
+import { enforceTokenLimits, tokenLimitMessage } from "../../../../lib/api-usage";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const maxDuration = 90;
@@ -55,6 +56,9 @@ async function generateBriefingForUser(userId: string, database: SupabaseClient)
     .maybeSingle();
   if (existingError) throw new Error(`Nie udało się odczytać briefingu: ${existingError.message}`);
   if (existing) return { date: today, content: existing.content, briefing: existing, generated: false };
+
+  const tokenLimit = await enforceTokenLimits(database, userId);
+  if (!tokenLimit.allowed) return { date: today, content: null, briefing: null, generated: false, skippedByLimit: true, limitMessage: tokenLimitMessage(tokenLimit) };
 
   const runnerContext = await getRunnerContext(userId, database);
   const location = await getHomeLocation(userId, runnerContext, database);
@@ -135,15 +139,16 @@ export async function GET(request: Request) {
       if (profilesError) throw profilesError;
       const results = await Promise.allSettled((profiles ?? []).map(({ id }) => generateBriefingForUser(id, admin)));
       const generated = results.filter((result) => result.status === "fulfilled" && result.value.generated).length;
-      const reused = results.filter((result) => result.status === "fulfilled" && !result.value.generated).length;
-      const failed = results.length - generated - reused;
+      const skippedByLimit = results.filter((result) => result.status === "fulfilled" && "skippedByLimit" in result.value).length;
+      const reused = results.filter((result) => result.status === "fulfilled" && !result.value.generated && !("skippedByLimit" in result.value)).length;
+      const failed = results.length - generated - reused - skippedByLimit;
       results.forEach((result) => {
         if (result.status === "rejected") {
           void logTechnical("ERROR", "morning-briefing.user.failed", { requestId: requestLog.requestId, error: result.reason });
         }
       });
-      const response = Response.json({ success: failed === 0, processed: results.length, generated, reused, failed });
-      void requestLog.finish(failed === 0 ? 200 : 207, { model: "gemini-3.1-flash-lite", source: "cron", processed: results.length, generated, reused, failed });
+      const response = Response.json({ success: failed === 0, processed: results.length, generated, reused, skippedByLimit, failed });
+      void requestLog.finish(failed === 0 ? 200 : 207, { model: "gemini-3.1-flash-lite", source: "cron", processed: results.length, generated, reused, skippedByLimit, failed });
       return response;
     }
 
@@ -154,6 +159,11 @@ export async function GET(request: Request) {
       return response;
     }
     const generated = await generateBriefingForUser(user.id, database);
+    if ("skippedByLimit" in generated) {
+      const response = Response.json({ error: generated.limitMessage }, { status: 429 });
+      void requestLog.finish(429, { security: "token_limit" });
+      return response;
+    }
     const response = Response.json({ success: true, saved: true, cached: !generated.generated, ...generated });
     void requestLog.finish(200, { model: "gemini-3.1-flash-lite", saved: true, cached: !generated.generated, source: "user" });
     return response;

@@ -37,7 +37,7 @@ import {
 } from "../../../lib/running-data";
 import { fetchWeather, searchKnowledge, searchKnowledgeTool } from "../../../lib/agent-tools";
 import { getRequestSupabaseClient, getRequestUser } from "../../../lib/request-user";
-import { enforceDailyTokenLimit, recordApiUsage } from "../../../lib/api-usage";
+import { enforceTokenLimits, recordApiUsage, tokenLimitMessage } from "../../../lib/api-usage";
 import {
   containsSensitiveOutput,
   SECURITY_BLOCKED_MESSAGE,
@@ -1229,10 +1229,11 @@ export async function POST(req: Request) {
       return createSecurityMessageResponse(error);
     }
     try {
-      if (!(await enforceDailyTokenLimit(database, userId))) {
-        void requestLog.finish(429, { security: "daily_token_limit" });
+      const limitCheck = await enforceTokenLimits(database, userId);
+      if (!limitCheck.allowed) {
+        void requestLog.finish(429, { security: `${limitCheck.exceeded}_token_limit` });
         return createSecurityMessageResponse(
-          "Dzienny limit tokenów (10 tys.) został wyczerpany. Wróć jutro.",
+          tokenLimitMessage(limitCheck),
         );
       }
     } catch (error) {

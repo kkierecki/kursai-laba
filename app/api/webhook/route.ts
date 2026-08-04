@@ -4,6 +4,7 @@ import { createSupabaseAdminClient } from "../../../lib/supabase-admin";
 import { beginTechnicalRequest, logTechnical } from "../../../lib/technical-logger";
 import { containsUnsafeJsonContent } from "../../../lib/content-security";
 import { recordApiUsage } from "../../../lib/api-usage";
+import { enforceTokenLimits, tokenLimitMessage } from "../../../lib/api-usage";
 
 export const maxDuration = 60;
 export const dynamic = "force-dynamic";
@@ -92,7 +93,11 @@ export async function POST(request: Request) {
 
     let analysis = "Analiza automatyczna jest tymczasowo niedostępna.";
     let status: "processed" | "analysis_failed" = "processed";
-    try {
+    const tokenLimit = await enforceTokenLimits(admin, payload.userId);
+    if (!tokenLimit.allowed) {
+      analysis = tokenLimitMessage(tokenLimit);
+      status = "analysis_failed";
+    } else try {
       const result = await generateText({
         model: google("gemini-3.1-flash-lite"),
         prompt: analysisPrompt(payload),
