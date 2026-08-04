@@ -56,6 +56,8 @@ export function AppNavigation() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [otherOpen, setOtherOpen] = useState(() => otherLinks.some((link) => pathname.startsWith(link.href)));
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthReady, setIsAuthReady] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -77,8 +79,15 @@ export function AppNavigation() {
       }
     }
 
-    void supabase.auth.getSession().then(({ data: { session } }) => checkAdmin(session?.access_token));
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      if (active) {
+        setIsAuthenticated(Boolean(session));
+        setIsAuthReady(true);
+      }
+      void checkAdmin(session?.access_token);
+    });
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (active) setIsAuthenticated(Boolean(session));
       void checkAdmin(session?.access_token);
     });
 
@@ -88,11 +97,11 @@ export function AppNavigation() {
     };
   }, []);
 
-  if (pathname === "/login" || pathname === "/reset-password") return null;
+  if (!isAuthReady || !isAuthenticated || pathname === "/login" || pathname === "/reset-password") return null;
 
   async function signOut() {
     await supabase.auth.signOut();
-    router.replace("/login");
+    router.replace("/");
   }
 
   return (

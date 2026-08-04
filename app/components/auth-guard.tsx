@@ -9,7 +9,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
-  const isPublicAuthPage = pathname === "/login" || pathname === "/reset-password";
+  const isPublicPage = pathname === "/" || pathname === "/login" || pathname === "/reset-password";
 
   useEffect(() => {
     let active = true;
@@ -18,7 +18,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
       const { data } = await supabase.auth.getUser();
       if (!active) return;
 
-      if (!data.user && !isPublicAuthPage) {
+      if (!data.user && !isPublicPage) {
         router.replace("/login");
       } else if (data.user && pathname === "/login") {
         router.replace("/");
@@ -30,16 +30,16 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     void checkSession();
     const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
       setAuthenticated(Boolean(session));
-      if (!session && !isPublicAuthPage) router.replace("/login");
+      if (!session && !isPublicPage) router.replace("/login");
     });
 
     return () => {
       active = false;
       subscription.subscription.unsubscribe();
     };
-  }, [isPublicAuthPage, pathname, router]);
+  }, [isPublicPage, pathname, router]);
 
-  if (!ready || (!isPublicAuthPage && !authenticated)) {
+  if (!ready || (!isPublicPage && !authenticated)) {
     return <main className="auth-loading">Sprawdzam sesję…</main>;
   }
 

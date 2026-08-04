@@ -13,6 +13,7 @@ import {
   useImageAttachment,
 } from "./components/image-attachment";
 import DashboardPage from "./components/dashboard-page";
+import LandingPage from "./components/landing-page";
 
 type ChatMode = "casual" | "expert" | "creative";
 type AiModel = "flash" | "pro";
@@ -775,4 +776,30 @@ export function ChatHome() {
   );
 }
 
-export default DashboardPage;
+export default function HomePage() {
+  const [isCheckingSession, setIsCheckingSession] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    void supabase.auth.getUser().then(({ data }) => {
+      if (!active) return;
+      setIsAuthenticated(Boolean(data.user));
+      setIsCheckingSession(false);
+    });
+
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (active) setIsAuthenticated(Boolean(session));
+    });
+
+    return () => {
+      active = false;
+      subscription.subscription.unsubscribe();
+    };
+  }, []);
+
+  if (isCheckingSession) return <main className="auth-loading">Przygotowuję RUNLAB…</main>;
+
+  return isAuthenticated ? <DashboardPage /> : <LandingPage />;
+}
