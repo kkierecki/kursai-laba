@@ -507,6 +507,11 @@ function isProfileBackfillCommand(text: string) {
   return normalized.startsWith("/uzupelnij-profil") || normalized.startsWith("/uzpelnij-profil");
 }
 
+function requestsProfileUpdate(text: string) {
+  const normalized = text.toLocaleLowerCase("pl-PL").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return /\b(?:profil(?:u|em|owi)?|statystyk(?:a|i|ami|e)|parametr(?:y|ow)|metryk(?:a|i|ami|e))\b/.test(normalized);
+}
+
 async function createHistoricalBackfillPrompt(userId: string, database: SupabaseClient) {
   try {
     const history = await getHistoricalTrainingMemory(userId, database);
@@ -780,6 +785,7 @@ function createModelResponse({
   userId,
   forceToolUse = false,
   forceBackfillWorkout = false,
+  forceProfileSave = false,
 }: {
   abortSignal?: AbortSignal;
   database: SupabaseClient;
@@ -791,6 +797,7 @@ function createModelResponse({
   userId: string;
   forceToolUse?: boolean;
   forceBackfillWorkout?: boolean;
+  forceProfileSave?: boolean;
 }) {
   const result = streamText({
     model: google(model),
@@ -802,6 +809,11 @@ function createModelResponse({
     experimental_transform: createOutputSecurityTransform(requestId),
     toolChoice: "auto",
     prepareStep: ({ stepNumber }) => {
+      if (forceProfileSave && stepNumber === 0) {
+        // `createChatTools` has an unauthenticated return branch, so TypeScript
+        // only exposes its common tools here. This branch is reached after auth.
+        return { toolChoice: { type: "tool", toolName: "saveAthleteProfile" as never } };
+      }
       if (forceBackfillWorkout && (stepNumber === 0 || stepNumber === 1)) return { toolChoice: "required" };
       if (forceToolUse && stepNumber === 0) return { toolChoice: "required" };
       return { toolChoice: "auto" };
@@ -974,6 +986,7 @@ function createFlashStreamWithFallback({
   userId,
   forceToolUse,
   forceBackfillWorkout,
+  forceProfileSave,
 }: {
   database: SupabaseClient;
   messages: ModelMessage[];
@@ -983,6 +996,7 @@ function createFlashStreamWithFallback({
   userId: string;
   forceToolUse?: boolean;
   forceBackfillWorkout?: boolean;
+  forceProfileSave?: boolean;
 }) {
   return new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -1004,6 +1018,7 @@ function createFlashStreamWithFallback({
           userId,
           forceToolUse,
           forceBackfillWorkout,
+          forceProfileSave,
         });
         const primaryReader = primaryResponse.body?.getReader();
 
@@ -1072,6 +1087,7 @@ function createFlashStreamWithFallback({
             userId,
             forceToolUse,
             forceBackfillWorkout,
+            forceProfileSave,
           });
 
           await pipeResponse(fallbackResponse, controller);
@@ -1106,6 +1122,7 @@ function createSelectedModelStream({
   userId,
   forceToolUse,
   forceBackfillWorkout,
+  forceProfileSave,
 }: {
   aiModel: AiModel;
   database: SupabaseClient;
@@ -1116,6 +1133,7 @@ function createSelectedModelStream({
   userId: string;
   forceToolUse?: boolean;
   forceBackfillWorkout?: boolean;
+  forceProfileSave?: boolean;
 }) {
   if (aiModel === "pro") {
     return createModelResponse({
@@ -1128,10 +1146,11 @@ function createSelectedModelStream({
       userId,
       forceToolUse,
       forceBackfillWorkout,
+      forceProfileSave,
     }).body;
   }
 
-  return createFlashStreamWithFallback({ database, messages, requestId, system, tools, userId, forceToolUse, forceBackfillWorkout });
+  return createFlashStreamWithFallback({ database, messages, requestId, system, tools, userId, forceToolUse, forceBackfillWorkout, forceProfileSave });
 }
 
 export async function POST(req: Request) {
@@ -1269,7 +1288,12 @@ export async function POST(req: Request) {
     const historicalBackfill = isProfileBackfill
       ? `\n\n${await createHistoricalBackfillPrompt(userId, database)}\n\nWynik deterministycznego zapisu treningu ze zweryfikowanego screena: ${JSON.stringify(workoutBackfillResult)}. Uwzględnij go dokładnie w odpowiedzi.`
       : "";
-    const system = `${baseSystem}\n\n${createPersonalizationPrompt(profile)}\n\n${trainingContext}${editingContext}${historicalBackfill}`;
+    const imageAttached = (images?.length ?? (image ? 1 : 0)) > 0;
+    const forceProfileSave = imageAttached && requestsProfileUpdate(lastUserText);
+    const profileUpdateInstruction = forceProfileSave
+      ? "\n\nUżytkownik wysłał screeny, aby zaktualizować profil. W pierwszym kroku obowiązkowo użyj saveAthleteProfile z każdym jednoznacznie widocznym parametrem profilu. Jeśli żaden parametr nie jest czytelny, wyjaśnij to w odpowiedzi."
+      : "";
+    const system = `${baseSystem}\n\n${createPersonalizationPrompt(profile)}\n\n${trainingContext}${editingContext}${historicalBackfill}${profileUpdateInstruction}`;
     const modelMessages = await convertToModelMessages(sanitizedMessages, {
       tools: requestTools,
     });
@@ -1281,8 +1305,9 @@ export async function POST(req: Request) {
       system,
       tools: requestTools,
       userId,
-      forceToolUse: (images?.length ?? (image ? 1 : 0)) > 0,
+      forceToolUse: imageAttached,
       forceBackfillWorkout: false,
+      forceProfileSave,
     });
 
     if (!stream) {
