@@ -512,6 +512,13 @@ function requestsProfileUpdate(text: string) {
   return /\b(?:profil(?:u|em|owi)?|statystyk(?:a|i|ami|e)|parametr(?:y|ow)|metryk(?:a|i|ami|e))\b/.test(normalized);
 }
 
+function confirmsProfileUpdate(text: string) {
+  const normalized = text.trim().toLocaleLowerCase("pl-PL").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return /\bzapisz(?:cie)?\s+(?:te|nowe)\s+dane\s+w\s+profilu\b/.test(normalized)
+    || /\b(?:potwierdzam|akceptuje|zatwierdzam)\b[\s\S]{0,80}\bprofil/.test(normalized)
+    || /\bprofil[\s\S]{0,80}\b(?:potwierdzam|akceptuje|zatwierdzam)\b/.test(normalized);
+}
+
 async function createHistoricalBackfillPrompt(userId: string, database: SupabaseClient) {
   try {
     const history = await getHistoricalTrainingMemory(userId, database);
@@ -1289,8 +1296,11 @@ export async function POST(req: Request) {
       ? `\n\n${await createHistoricalBackfillPrompt(userId, database)}\n\nWynik deterministycznego zapisu treningu ze zweryfikowanego screena: ${JSON.stringify(workoutBackfillResult)}. Uwzględnij go dokładnie w odpowiedzi.`
       : "";
     const imageAttached = (images?.length ?? (image ? 1 : 0)) > 0;
-    const forceProfileSave = imageAttached && requestsProfileUpdate(lastUserText);
-    const profileUpdateInstruction = forceProfileSave
+    const isProfileConfirmation = confirmsProfileUpdate(lastUserText);
+    const forceProfileSave = (imageAttached && requestsProfileUpdate(lastUserText)) || isProfileConfirmation;
+    const profileUpdateInstruction = isProfileConfirmation
+      ? "\n\nTa wiadomość jest wyraźnym potwierdzeniem aktualizacji ostatnich zakwestionowanych parametrów profilu. Odszukaj je w historii rozmowy i w pierwszym kroku użyj saveAthleteProfile wyłącznie dla tych pól, z confirmed=true. Nie zmieniaj innych pól i nie twierdź, że zapis się udał bez wyniku narzędzia."
+      : forceProfileSave
       ? "\n\nUżytkownik wysłał screeny, aby zaktualizować profil. W pierwszym kroku obowiązkowo użyj saveAthleteProfile z każdym jednoznacznie widocznym parametrem profilu. Jeśli żaden parametr nie jest czytelny, wyjaśnij to w odpowiedzi."
       : "";
     const system = `${baseSystem}\n\n${createPersonalizationPrompt(profile)}\n\n${trainingContext}${editingContext}${historicalBackfill}${profileUpdateInstruction}`;

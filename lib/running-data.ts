@@ -242,7 +242,7 @@ export async function saveAthleteProfile(userId: string, input: AthleteProfileIn
   const normalizedSex = normalizeSex(input.sex);
   const { data: existing, error: loadError } = await database
     .from("athlete_profiles")
-    .select("birth_year,weight_kg,height_cm,hr_max,lactate_threshold_hr,lactate_threshold_pace_seconds,vo2max,typical_cadence_spm")
+    .select("birth_year,sex,weight_kg,height_cm,hr_max,lactate_threshold_hr,lactate_threshold_pace_seconds,vo2max,typical_cadence_spm")
     .eq("user_id", userId)
     .maybeSingle();
   if (loadError) throw loadError;
@@ -283,7 +283,9 @@ export async function saveAthleteProfile(userId: string, input: AthleteProfileIn
   const profile = compact({
     user_id: userId,
     birth_year: accepts("birth_year") ? input.birthYear : undefined,
-    sex: normalizedSex,
+    // Naprawia historyczne wartości (np. "M") przy najbliższym bezpiecznym zapisie.
+    // Dzięki temu aktualizacja niezwiązanej metryki nie odbije się od ograniczenia SQL.
+    sex: normalizedSex ?? normalizeSex(existing?.sex),
     weight_kg: accepts("weight_kg") ? input.weightKg : undefined,
     height_cm: accepts("height_cm") ? input.heightCm : undefined,
     hr_max: accepts("hr_max") ? input.hrMax : undefined,
