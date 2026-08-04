@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { supabase } from "../../lib/supabase";
 import { AppIcon, type AppIconName } from "./app-icon";
+import { ThemeToggle } from "./theme-toggle";
 
 type IconName = AppIconName;
 
@@ -124,7 +125,7 @@ export function AppNavigation() {
           <button aria-expanded={otherOpen} className={`nav-other-toggle ${otherLinks.some((link) => pathname.startsWith(link.href)) ? "active" : ""}`} onClick={() => setOtherOpen((value) => !value)} type="button"><NavIcon name="grid" /> Pozostałe narzędzia <span aria-hidden="true">{otherOpen ? "−" : "+"}</span></button>
           {otherOpen && <div className="nav-other-links">{otherLinks.map((link) => { const active = pathname.startsWith(link.href); return <Link aria-current={active ? "page" : undefined} className={active ? "active" : ""} href={link.href} key={link.href} onClick={() => setMenuOpen(false)}><OtherNavIcon href={link.href} /><span>{link.label}</span></Link>; })}</div>}
         </div>
-        <button className="nav-sign-out" onClick={() => void signOut()} type="button">Wyloguj</button>
+        <div className="nav-footer-actions"><ThemeToggle /><button className="nav-sign-out" onClick={() => void signOut()} type="button">Wyloguj</button></div>
       </nav>
     </>
   );
