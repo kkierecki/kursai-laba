@@ -117,8 +117,9 @@ const toolUsageRules = `## TOOL USAGE RULES
 - For HRmax, VO₂max, cadence, threshold, body metrics, availability or limitations, also call saveAthleteProfile. For an explicitly stated goal call saveRunningGoal; for a completed workout call saveWorkout; for sleep or readiness call saveRecoveryLog. Do this after analyzing a screenshot whenever the value is clearly visible.
 - If a newly read profile value differs from the saved value, never overwrite only that conflicting value silently. Only send observedOn when the screenshot/source itself shows an objective date. The save tool will update that value automatically only if that date is later than the saved observation date; otherwise ask the user whether to update it and retry only that field after an explicit confirmation. A conflict must never prevent saving other independent, unambiguous profile fields in the same tool call.
 - If the save tool reports requiresConfirmation and the user then says "tak", "potwierdzam" or otherwise explicitly agrees in the same conversation, immediately retry the same conflicting fields with confirmed=true. Do not merely say that they were updated: report the actual tool result.
-- Treat image attachments as training screenshots unless the user says otherwise. When several screenshots are attached, read and compare every one before answering. Extract only values you can see clearly, state uncertainty, and never invent missing metrics.
-- For every attached training screenshot, before the final answer you MUST persist all clearly visible data: use saveAthleteProfile for profile metrics, saveWorkout for a completed activity with an objectively visible date, saveRecoveryLog for recovery data, and saveRunningGoal for an explicitly stated goal. If a required date or a conflicting value prevents saving, explain exactly what is missing or ask for confirmation. Report which records were saved.
+- Treat every attached image as an unknown running-related screenshot until you inspect it. It can show a completed workout, recovery, profile/performance statistics, several kinds of data, or none of these. When several screenshots are attached, compare every one and merge screenshots of the same activity instead of treating each image as a new workout.
+- For every attached screenshot, call processScreenshotRecords as the first tool before answering. It is the only entry point for automatic screenshot persistence: it deduplicates activities and recovery entries before writing. Use it for all screenshots in one batch, with the actual screen numbers. Extract only values you can see clearly, state uncertainty, and never invent missing metrics.
+- A completed activity requires an objectively visible date before it can be saved. A recovery entry also requires its visible date. Profile/performance values may be saved only when they are certain; if a value conflicts with the stored value and the source has no objectively newer date, ask for confirmation. Report the actual tool outcomes, including records already saved as duplicates.
 - Do not claim that a workout, goal, recovery entry or profile field was saved unless the corresponding save tool confirmed it. If saveAthleteProfile returns both savedFields and conflicts, report savedFields as saved and ask confirmation only for conflicts.
 - Before the final answer, check that every part of the user's request was completed. If a tool fails, try a sensible alternative and explain the limitation only at the end.`;
 
@@ -176,6 +177,51 @@ type RequestImage = {
   dataUrl: string;
   mediaType: string;
   filename?: string;
+};
+
+type ScreenshotRecordInput = {
+  screenNumbers: number[];
+  certainty: "certain" | "uncertain";
+  kind: "workout" | "recovery" | "profile" | "mixed" | "unknown";
+  workout?: {
+    performedOn?: string;
+    summary?: string;
+    trainingType?: "easy" | "long" | "tempo" | "threshold" | "intervals" | "recovery" | "race" | "cross_training" | "other";
+    distanceM?: number;
+    durationSeconds?: number;
+    averagePaceSeconds?: number;
+    averageHr?: number;
+    maxHr?: number;
+    averageCadenceSpm?: number;
+    elevationGainM?: number;
+    rpe?: number;
+    notes?: string;
+  };
+  recovery?: {
+    loggedOn?: string;
+    sleepHours?: number;
+    sleepQuality?: number;
+    sleepQualityScale?: number;
+    restingHr?: number;
+    hrvMs?: number;
+    fatigue?: number;
+    soreness?: number;
+    stress?: number;
+    notes?: string;
+  };
+  profile?: {
+    birthYear?: number;
+    sex?: "female" | "male" | "nonbinary" | "undisclosed";
+    weightKg?: number;
+    heightCm?: number;
+    hrMax?: number;
+    lactateThresholdHr?: number;
+    lactateThresholdPaceSeconds?: number;
+    vo2max?: number;
+    typicalCadenceSpm?: number;
+    observedOn?: string;
+  };
+  clarification?: string;
 };
 
 const chatTools = {
@@ -300,6 +346,112 @@ function createChatTools(userId: string | null, database?: SupabaseClient, reque
       description: "Wyszukuje informacje wyłącznie w prywatnej bazie wiedzy zalogowanego użytkownika.",
       inputSchema: jsonSchema<{ query: string }>({ type: "object", properties: { query: { type: "string" } }, required: ["query"], additionalProperties: false }),
       execute: async ({ query }) => searchKnowledge(query, userId, database),
+    }),
+    processScreenshotRecords: tool({
+      description: "Obowiązkowy pierwszy krok po otrzymaniu screenów biegowych. Przeanalizuj WSZYSTKIE screeny, scal widoki tej samej aktywności w jeden rekord i zwróć wyłącznie dane jednoznacznie widoczne. Dla training/recovery/profile ustaw certainty='certain' tylko gdy dane oraz właściwa data są czytelne. Nie zapisuj przy certainty='uncertain' — podaj krótkie clarification. W jednym wywołaniu można zapisać treningi, regenerację i profil z różnych screenów.",
+      inputSchema: jsonSchema<{ records: ScreenshotRecordInput[] }>({
+        type: "object",
+        properties: {
+          records: {
+            type: "array",
+            minItems: 1,
+            maxItems: 15,
+            items: {
+              type: "object",
+              properties: {
+                screenNumbers: { type: "array", minItems: 1, maxItems: 5, items: { type: "number" } },
+                certainty: { type: "string", enum: ["certain", "uncertain"] },
+                kind: { type: "string", enum: ["workout", "recovery", "profile", "mixed", "unknown"] },
+                workout: {
+                  type: "object",
+                  properties: {
+                    performedOn: { type: "string", description: "YYYY-MM-DD, tylko obiektywnie widoczna data treningu" }, summary: { type: "string" }, trainingType: { type: "string", enum: ["easy", "long", "tempo", "threshold", "intervals", "recovery", "race", "cross_training", "other"] }, distanceM: { type: "number" }, durationSeconds: { type: "number" }, averagePaceSeconds: { type: "number" }, averageHr: { type: "number" }, maxHr: { type: "number" }, averageCadenceSpm: { type: "number" }, elevationGainM: { type: "number" }, rpe: { type: "number" }, notes: { type: "string" },
+                  }, additionalProperties: false,
+                },
+                recovery: {
+                  type: "object",
+                  properties: {
+                    loggedOn: { type: "string", description: "YYYY-MM-DD, tylko data widoczna na screenie" }, sleepHours: { type: "number" }, sleepQuality: { type: "number" }, sleepQualityScale: { type: "number", enum: [5, 100] }, restingHr: { type: "number" }, hrvMs: { type: "number" }, fatigue: { type: "number" }, soreness: { type: "number" }, stress: { type: "number" }, notes: { type: "string" },
+                  }, additionalProperties: false,
+                },
+                profile: {
+                  type: "object",
+                  properties: {
+                    birthYear: { type: "number" }, sex: { type: "string", enum: ["female", "male", "nonbinary", "undisclosed"] }, weightKg: { type: "number" }, heightCm: { type: "number" }, hrMax: { type: "number" }, lactateThresholdHr: { type: "number" }, lactateThresholdPaceSeconds: { type: "number" }, vo2max: { type: "number" }, typicalCadenceSpm: { type: "number" }, observedOn: { type: "string", description: "YYYY-MM-DD, tylko data pomiaru widoczna na screenie" },
+                  }, additionalProperties: false,
+                },
+                clarification: { type: "string" },
+              },
+              required: ["screenNumbers", "certainty", "kind"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["records"],
+        additionalProperties: false,
+      }),
+      execute: async ({ records }) => {
+        const outcomes: Array<Record<string, unknown>> = [];
+        for (const record of records) {
+          const screens = record.screenNumbers.join(", ");
+          if (record.certainty !== "certain") {
+            outcomes.push({ screens, kind: record.kind, saved: false, needsClarification: true, clarification: record.clarification ?? "Dane na screenie nie są wystarczająco czytelne lub nie zawierają daty." });
+            continue;
+          }
+          if (record.workout) {
+            if (!record.workout.performedOn || !record.workout.summary) {
+              outcomes.push({ screens, kind: "workout", saved: false, needsClarification: true, clarification: "Do zapisu treningu potrzebna jest czytelna data i krótki opis aktywności." });
+            } else {
+              try {
+                outcomes.push({ screens, kind: "workout", ...(await saveWorkout(userId, {
+                  performedOn: record.workout.performedOn,
+                  summary: record.workout.summary,
+                  source: "screenshot",
+                  trainingType: record.workout.trainingType,
+                  distanceM: record.workout.distanceM,
+                  durationSeconds: record.workout.durationSeconds,
+                  averagePaceSeconds: record.workout.averagePaceSeconds,
+                  averageHr: record.workout.averageHr,
+                  maxHr: record.workout.maxHr,
+                  averageCadenceSpm: record.workout.averageCadenceSpm,
+                  elevationGainM: record.workout.elevationGainM,
+                  rpe: record.workout.rpe,
+                  unstructuredNotes: record.workout.notes,
+                  extractionConfidence: "screen_verified",
+                }, database)) });
+              } catch (error) {
+                void logTechnical("ERROR", "runner.screenshot.workout.save.failed", { route: "/api/chat", error });
+                outcomes.push({ screens, kind: "workout", saved: false, error: "Nie udało się zapisać treningu." });
+              }
+            }
+          }
+          if (record.recovery) {
+            const recovery = record.recovery;
+            if (!recovery.loggedOn) {
+              outcomes.push({ screens, kind: "recovery", saved: false, needsClarification: true, clarification: "Do zapisu regeneracji potrzebna jest data widoczna na screenie." });
+            } else {
+              try {
+                outcomes.push({ screens, kind: "recovery", ...(await saveRecoveryLog(userId, { ...recovery, loggedOn: recovery.loggedOn }, database)) });
+              } catch (error) {
+                void logTechnical("ERROR", "runner.screenshot.recovery.save.failed", { route: "/api/chat", error });
+                outcomes.push({ screens, kind: "recovery", saved: false, error: "Nie udało się zapisać regeneracji." });
+              }
+            }
+          }
+          if (record.profile) {
+            try {
+              outcomes.push({ screens, kind: "profile", ...(await saveAthleteProfile(userId, record.profile, database)) });
+            } catch (error) {
+              void logTechnical("ERROR", "runner.screenshot.profile.save.failed", { route: "/api/chat", error });
+              outcomes.push({ screens, kind: "profile", saved: false, error: "Nie udało się zaktualizować profilu." });
+            }
+          }
+          if (!record.workout && !record.recovery && !record.profile) {
+            outcomes.push({ screens, kind: record.kind, saved: false, needsClarification: true, clarification: record.clarification ?? "Na screenie nie rozpoznano danych do bezpiecznego zapisu." });
+          }
+        }
+        return { processed: true, outcomes };
+      },
     }),
     saveUserName: tool({
       description:
@@ -505,11 +657,6 @@ function isProfileBackfillCommand(text: string) {
   const normalized = text.trim().toLocaleLowerCase("pl-PL").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   // Akceptujemy też często wpisywane /uzpelnij-profil (bez drugiego "u").
   return normalized.startsWith("/uzupelnij-profil") || normalized.startsWith("/uzpelnij-profil");
-}
-
-function requestsProfileUpdate(text: string) {
-  const normalized = text.toLocaleLowerCase("pl-PL").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  return /\b(?:profil(?:u|em|owi)?|statystyk(?:a|i|ami|e)|parametr(?:y|ow)|metryk(?:a|i|ami|e))\b/.test(normalized);
 }
 
 function confirmsProfileUpdate(text: string) {
@@ -793,6 +940,7 @@ function createModelResponse({
   forceToolUse = false,
   forceBackfillWorkout = false,
   forceProfileSave = false,
+  forceScreenshotProcessing = false,
 }: {
   abortSignal?: AbortSignal;
   database: SupabaseClient;
@@ -805,6 +953,7 @@ function createModelResponse({
   forceToolUse?: boolean;
   forceBackfillWorkout?: boolean;
   forceProfileSave?: boolean;
+  forceScreenshotProcessing?: boolean;
 }) {
   const result = streamText({
     model: google(model),
@@ -816,6 +965,9 @@ function createModelResponse({
     experimental_transform: createOutputSecurityTransform(requestId),
     toolChoice: "auto",
     prepareStep: ({ stepNumber }) => {
+      if (forceScreenshotProcessing && stepNumber === 0) {
+        return { toolChoice: { type: "tool", toolName: "processScreenshotRecords" as never } };
+      }
       if (forceProfileSave && stepNumber === 0) {
         // `createChatTools` has an unauthenticated return branch, so TypeScript
         // only exposes its common tools here. This branch is reached after auth.
@@ -994,6 +1146,7 @@ function createFlashStreamWithFallback({
   forceToolUse,
   forceBackfillWorkout,
   forceProfileSave,
+  forceScreenshotProcessing,
 }: {
   database: SupabaseClient;
   messages: ModelMessage[];
@@ -1004,6 +1157,7 @@ function createFlashStreamWithFallback({
   forceToolUse?: boolean;
   forceBackfillWorkout?: boolean;
   forceProfileSave?: boolean;
+  forceScreenshotProcessing?: boolean;
 }) {
   return new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -1026,6 +1180,7 @@ function createFlashStreamWithFallback({
           forceToolUse,
           forceBackfillWorkout,
           forceProfileSave,
+          forceScreenshotProcessing,
         });
         const primaryReader = primaryResponse.body?.getReader();
 
@@ -1095,6 +1250,7 @@ function createFlashStreamWithFallback({
             forceToolUse,
             forceBackfillWorkout,
             forceProfileSave,
+            forceScreenshotProcessing,
           });
 
           await pipeResponse(fallbackResponse, controller);
@@ -1130,6 +1286,7 @@ function createSelectedModelStream({
   forceToolUse,
   forceBackfillWorkout,
   forceProfileSave,
+  forceScreenshotProcessing,
 }: {
   aiModel: AiModel;
   database: SupabaseClient;
@@ -1141,6 +1298,7 @@ function createSelectedModelStream({
   forceToolUse?: boolean;
   forceBackfillWorkout?: boolean;
   forceProfileSave?: boolean;
+  forceScreenshotProcessing?: boolean;
 }) {
   if (aiModel === "pro") {
     return createModelResponse({
@@ -1154,10 +1312,11 @@ function createSelectedModelStream({
       forceToolUse,
       forceBackfillWorkout,
       forceProfileSave,
+      forceScreenshotProcessing,
     }).body;
   }
 
-  return createFlashStreamWithFallback({ database, messages, requestId, system, tools, userId, forceToolUse, forceBackfillWorkout, forceProfileSave });
+  return createFlashStreamWithFallback({ database, messages, requestId, system, tools, userId, forceToolUse, forceBackfillWorkout, forceProfileSave, forceScreenshotProcessing });
 }
 
 export async function POST(req: Request) {
@@ -1297,11 +1456,9 @@ export async function POST(req: Request) {
       : "";
     const imageAttached = (images?.length ?? (image ? 1 : 0)) > 0;
     const isProfileConfirmation = confirmsProfileUpdate(lastUserText);
-    const forceProfileSave = (imageAttached && requestsProfileUpdate(lastUserText)) || isProfileConfirmation;
+    const forceProfileSave = isProfileConfirmation;
     const profileUpdateInstruction = isProfileConfirmation
       ? "\n\nTa wiadomość jest wyraźnym potwierdzeniem aktualizacji ostatnich zakwestionowanych parametrów profilu. Odszukaj je w historii rozmowy i w pierwszym kroku użyj saveAthleteProfile wyłącznie dla tych pól, z confirmed=true. Nie zmieniaj innych pól i nie twierdź, że zapis się udał bez wyniku narzędzia."
-      : forceProfileSave
-      ? "\n\nUżytkownik wysłał screeny, aby zaktualizować profil. W pierwszym kroku obowiązkowo użyj saveAthleteProfile z każdym jednoznacznie widocznym parametrem profilu. Jeśli żaden parametr nie jest czytelny, wyjaśnij to w odpowiedzi."
       : "";
     const system = `${baseSystem}\n\n${createPersonalizationPrompt(profile)}\n\n${trainingContext}${editingContext}${historicalBackfill}${profileUpdateInstruction}`;
     const modelMessages = await convertToModelMessages(sanitizedMessages, {
@@ -1318,6 +1475,7 @@ export async function POST(req: Request) {
       forceToolUse: imageAttached,
       forceBackfillWorkout: false,
       forceProfileSave,
+      forceScreenshotProcessing: imageAttached,
     });
 
     if (!stream) {

@@ -65,6 +65,19 @@ type AthleteProfileInput = {
   confirmed?: boolean;
 };
 
+type StoredWorkoutForDeduplication = {
+  id: string;
+  performed_on: string;
+  distance_m: number | null;
+  duration_seconds: number | null;
+  average_pace_seconds: number | null;
+  average_hr: number | null;
+  max_hr: number | null;
+  average_cadence_spm: number | null;
+  elevation_gain_m: number | null;
+  summary: string;
+};
+
 function compact<T extends Record<string, unknown>>(value: T) {
   return Object.fromEntries(
     Object.entries(value).filter(([, item]) => item !== undefined),
@@ -314,6 +327,48 @@ export async function saveAthleteProfile(userId: string, input: AthleteProfileIn
 }
 
 export async function saveWorkout(userId: string, input: WorkoutInput, database: SupabaseClient = supabase) {
+  // Garmin and Strava often split one activity across several screenshots.  Do
+  // the check in the write path (rather than relying on the model prompt) so a
+  // second tool call cannot silently create a duplicate activity.
+  const { data: sameDayWorkouts, error: duplicateLookupError } = await database
+    .from("workouts")
+    .select("id,performed_on,distance_m,duration_seconds,average_pace_seconds,average_hr,max_hr,average_cadence_spm,elevation_gain_m,summary")
+    .eq("user_id", userId)
+    .eq("performed_on", input.performedOn);
+  if (duplicateLookupError) throw duplicateLookupError;
+
+  const comparableFields: Array<keyof Omit<StoredWorkoutForDeduplication, "id" | "performed_on" | "summary">> = [
+    "distance_m",
+    "duration_seconds",
+    "average_pace_seconds",
+    "average_hr",
+    "max_hr",
+    "average_cadence_spm",
+    "elevation_gain_m",
+  ];
+  const inputValues: Record<string, number | undefined> = {
+    distance_m: input.distanceM,
+    duration_seconds: input.durationSeconds,
+    average_pace_seconds: input.averagePaceSeconds,
+    average_hr: input.averageHr,
+    max_hr: input.maxHr,
+    average_cadence_spm: input.averageCadenceSpm,
+    elevation_gain_m: input.elevationGainM,
+  };
+  const sameActivity = (sameDayWorkouts as StoredWorkoutForDeduplication[] | null ?? []).find((workout) => {
+    const suppliedFields = comparableFields.filter((field) => inputValues[field] !== undefined);
+    const matchingSuppliedFields = suppliedFields.filter((field) => workout[field] === inputValues[field]);
+    // Distance together with the activity date is a stable identifier for a
+    // screenshot import.  Otherwise require at least two matching metrics, or
+    // the same human-provided summary when no metric is available.
+    if (input.distanceM !== undefined && workout.distance_m === input.distanceM) return true;
+    if (suppliedFields.length >= 2 && matchingSuppliedFields.length === suppliedFields.length) return true;
+    return suppliedFields.length === 0 && workout.summary.trim().toLocaleLowerCase("pl-PL") === input.summary.trim().toLocaleLowerCase("pl-PL");
+  });
+  if (sameActivity) {
+    return { saved: true, alreadySaved: true, id: sameActivity.id, performedOn: sameActivity.performed_on };
+  }
+
   const { data, error } = await database.from("workouts").insert(compact({
     user_id: userId,
     performed_on: input.performedOn,
@@ -381,7 +436,7 @@ export async function saveRecoveryLog(userId: string, input: RecoveryInput, data
       return { saved: false, error: "Wynik jakości snu musi mieścić się w podanej skali." };
     }
   }
-  const { data, error } = await database.from("recovery_logs").upsert(compact({
+  const payload = compact({
     user_id: userId,
     logged_on: input.loggedOn,
     sleep_hours: input.sleepHours,
@@ -394,7 +449,20 @@ export async function saveRecoveryLog(userId: string, input: RecoveryInput, data
     pain_description: input.painDescription?.trim(),
     stress: input.stress,
     notes: input.notes?.trim(),
-  }), { onConflict: "user_id,logged_on" }).select("id,logged_on").single();
+  });
+  const { data: existing, error: existingError } = await database
+    .from("recovery_logs")
+    .select("id,logged_on,sleep_hours,sleep_quality,sleep_quality_scale,resting_hr,hrv_ms,fatigue,soreness,pain_description,stress,notes")
+    .eq("user_id", userId)
+    .eq("logged_on", input.loggedOn)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existing) {
+    const fields = Object.keys(payload).filter((key) => !["user_id", "logged_on"].includes(key));
+    const isIdentical = fields.every((field) => existing[field as keyof typeof existing] === payload[field as keyof typeof payload]);
+    if (isIdentical) return { saved: true, alreadySaved: true, id: existing.id, loggedOn: existing.logged_on };
+  }
+  const { data, error } = await database.from("recovery_logs").upsert(payload, { onConflict: "user_id,logged_on" }).select("id,logged_on").single();
   if (error) throw error;
   return { saved: true, ...data };
 }
