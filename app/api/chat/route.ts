@@ -371,7 +371,7 @@ function createChatTools(userId: string | null, database?: SupabaseClient, reque
                 recovery: {
                   type: "object",
                   properties: {
-                    loggedOn: { type: "string", description: "YYYY-MM-DD, tylko data widoczna na screenie" }, sleepHours: { type: "number" }, sleepQuality: { type: "number" }, sleepQualityScale: { type: "number", enum: [5, 100] }, restingHr: { type: "number" }, hrvMs: { type: "number" }, fatigue: { type: "number" }, soreness: { type: "number" }, stress: { type: "number" }, notes: { type: "string" },
+                    loggedOn: { type: "string", description: "YYYY-MM-DD, tylko data widoczna na screenie" }, sleepHours: { type: "number" }, sleepQuality: { type: "number" }, sleepQualityScale: { type: "number", description: "Tylko 5 albo 100; walidacja zapisu odrzuci inną skalę." }, restingHr: { type: "number" }, hrvMs: { type: "number" }, fatigue: { type: "number" }, soreness: { type: "number" }, stress: { type: "number" }, notes: { type: "string" },
                   }, additionalProperties: false,
                 },
                 profile: {
